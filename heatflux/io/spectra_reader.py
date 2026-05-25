@@ -35,11 +35,23 @@ def _emit_progress(progress_cb: ProgressCallback | None, current: int, total: in
         progress_cb(current, total, stage)
 
 
-def _build_spectra_elements(nodes: list[SpectraNode], n_row: int, n_col: int) -> tuple[list[SpectraElement], float]:
+def _build_spectra_elements(
+    nodes: list[SpectraNode],
+    n_row: int,
+    n_col: int,
+    progress_cb: ProgressCallback | None = None,
+    progress_start: int = 0,
+    progress_total: int = 1,
+    progress_stage: str = "Building SPECTRA elements",
+) -> tuple[list[SpectraElement], float]:
     elements: list[SpectraElement] = []
     total_power_kw = 0.0
     if n_row < 2 or n_col < 2:
         return elements, total_power_kw
+
+    total_cells = (n_row - 1) * (n_col - 1)
+    emit_every_cells = max(1, total_cells // 200)
+    built_cells = 0
 
     for row in range(n_row - 1):
         for col in range(n_col - 1):
@@ -88,6 +100,9 @@ def _build_spectra_elements(nodes: list[SpectraNode], n_row: int, n_col: int) ->
                     a3=coeffs.a3,
                 )
             )
+            built_cells += 1
+            if built_cells == 1 or built_cells == total_cells or (built_cells % emit_every_cells == 0):
+                _emit_progress(progress_cb, progress_start + built_cells, progress_total, progress_stage)
 
     return elements, total_power_kw
 
@@ -96,14 +111,23 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
     """Parse SPECTRA grid file and build interpolation elements."""
     file_path = Path(path)
     lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    total_lines = max(len(lines), 1)
+    total_lines = len(lines)
+    if total_lines == 0:
+        raise ValueError("SPECTRA file is empty")
+
+    data_end_line = total_lines
+    for idx in range(2, total_lines):
+        if lines[idx].strip() == "":
+            data_end_line = idx
+            break
+    data_total = max(1, data_end_line - 2)
 
     nodes: list[SpectraNode] = []
     n_col = 0
     previous_y: float | None = None
+    emit_every_data_lines = max(1, data_total // 300)
 
     for line_no, raw_line in enumerate(lines, start=1):
-        _emit_progress(progress_cb, line_no, total_lines, "Reading SPECTRA rows")
         line = raw_line.strip()
         if line_no <= 2:
             continue
@@ -118,6 +142,14 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
         power_density = float(tokens[2])
         node_id = len(nodes) + 1
         nodes.append(SpectraNode(node_id=node_id, xmrad=xmrad, ymrad=ymrad, power_density=power_density))
+        data_idx = line_no - 2
+        if data_idx == 1 or data_idx == data_total or (data_idx % emit_every_data_lines == 0):
+            _emit_progress(
+                progress_cb,
+                data_idx,
+                data_total,
+                f"Reading SPECTRA rows | rows={len(nodes):,}",
+            )
 
         if previous_y is not None and n_col == 0 and ymrad != previous_y:
             n_col = node_id - 1
@@ -131,6 +163,8 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
     if len(nodes) % n_col != 0:
         raise ValueError("SPECTRA grid is not rectangular")
     n_row = len(nodes) // n_col
+    total_cells = max(1, (n_row - 1) * (n_col - 1))
+    progress_total = data_total + total_cells
 
     x_boundaries = np.array([nodes[col].xmrad for col in range(n_col)], dtype=np.float64)
     y_boundaries = np.array([nodes[row * n_col].ymrad for row in range(n_row)], dtype=np.float64)
@@ -139,8 +173,15 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
     y_min = float(np.min(y_boundaries))
     y_max = float(np.max(y_boundaries))
 
-    _emit_progress(progress_cb, total_lines // 2, total_lines, "Building SPECTRA elements")
-    elements, total_power_kw = _build_spectra_elements(nodes, n_row=n_row, n_col=n_col)
+    elements, total_power_kw = _build_spectra_elements(
+        nodes,
+        n_row=n_row,
+        n_col=n_col,
+        progress_cb=progress_cb,
+        progress_start=data_total,
+        progress_total=progress_total,
+        progress_stage=f"Building SPECTRA elements | cells={total_cells:,}",
+    )
 
     grid = SpectraGrid(
         x_boundaries=x_boundaries,
@@ -153,7 +194,7 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
         y_max=y_max,
     )
     peak = max(node.power_density for node in nodes)
-    _emit_progress(progress_cb, total_lines, total_lines, "SPECTRA parse complete")
+    _emit_progress(progress_cb, progress_total, progress_total, "SPECTRA parse complete")
     return SpectraParseResult(
         nodes=nodes,
         elements=elements,

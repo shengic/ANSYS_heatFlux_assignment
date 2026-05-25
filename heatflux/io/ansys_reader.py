@@ -86,12 +86,36 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
     total_elements = 0
     nodes_by_id: dict[int, AnsysNode] = {}
     heatflux_elements: list[AnsysHeatFluxElement] = []
+    flux_count = 0
+
+    emit_every_lines = 100
+    last_emit_line = 0
+
+    def emit_status(line_no: int, stage: str, force: bool = False) -> None:
+        nonlocal last_emit_line
+        if force or line_no == total_lines or line_no == 1 or (line_no - last_emit_line) >= emit_every_lines:
+            _emit_progress(progress_cb, line_no, total_lines, stage)
+            last_emit_line = line_no
 
     for line_no, raw_line in enumerate(lines, start=1):
         line = raw_line.strip()
         lower = line.lower()
 
-        _emit_progress(progress_cb, line_no, total_lines, "Scanning ANSYS sections")
+        if section == "node":
+            stage_name = "Parsing ANSYS nodes"
+        elif section == "element":
+            stage_name = "Counting ANSYS elements"
+        elif section == "heat flux":
+            stage_name = "Parsing ANSYS heat flux elements"
+        else:
+            stage_name = "Scanning ANSYS sections"
+        emit_status(
+            line_no,
+            (
+                f"{stage_name} "
+                f"| nodes={len(nodes_by_id):,} elements={total_elements:,} flux={flux_count:,}"
+            ),
+        )
 
         if "nodes for the whole assembly" in lower:
             section = "node"
@@ -116,24 +140,30 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
             except ValueError:
                 continue
             nodes_by_id[node.node_id] = node
-            _emit_progress(progress_cb, line_no, total_lines, "Parsing ANSYS nodes")
         elif section == "element":
             tokens = line.split()
             # EBLOCK element records can span continuation lines (e.g., 2-token tails).
             # Count only primary record lines to match ANSYS element totals.
             if tokens and tokens[0].lstrip("+-").isdigit() and len(tokens) >= 10:
                 total_elements += 1
-                _emit_progress(progress_cb, line_no, total_lines, "Counting ANSYS elements")
         elif section == "heat flux":
             try:
                 element = parse_ansys_heatflux_line(line, nodes_by_id)
             except ValueError:
                 continue
             heatflux_elements.append(element)
-            _emit_progress(progress_cb, line_no, total_lines, "Parsing ANSYS heat flux elements")
+            flux_count += 1
 
     node_ids = np.array(sorted(nodes_by_id.keys()), dtype=np.int32)
     xyz = np.array([[nodes_by_id[node_id].x, nodes_by_id[node_id].y, nodes_by_id[node_id].z] for node_id in node_ids], dtype=np.float64)
     node_store = AnsysNodeStore(node_ids=node_ids, xyz=xyz)
-    _emit_progress(progress_cb, total_lines, total_lines, "ANSYS parse complete")
+    _emit_progress(
+        progress_cb,
+        total_lines,
+        total_lines,
+        (
+            "ANSYS parse complete "
+            f"| nodes={len(nodes_by_id):,} elements={total_elements:,} flux={len(heatflux_elements):,}"
+        ),
+    )
     return AnsysParseResult(node_store=node_store, heatflux_elements=heatflux_elements, total_elements=total_elements)

@@ -15,21 +15,23 @@ class GeometryFrame(ttk.LabelFrame):
     def _build(self) -> None:
         headers = ("LABEL", "X", "Y", "Z")
         for col, label in enumerate(headers):
-            ttk.Label(self, text=label).grid(row=0, column=col, padx=8, pady=(8, 4), sticky="w")
+            ttk.Label(self, text=label, style="SectionTitle.TLabel", anchor="center").grid(
+                row=0, column=col, padx=6, pady=(4, 2), sticky="n"
+            )
 
-        rows = (("Source (S)", "source"), ("Target (T)", "target"), ("Horizontal (H)", "horizontal"))
+        rows = (("Source (S)", "source"), ("Target (T)", "target"), ("Horizontal point (H)", "horizontal"))
         for row_idx, (label, key) in enumerate(rows, start=1):
-            ttk.Label(self, text=label).grid(row=row_idx, column=0, padx=8, pady=6, sticky="w")
+            ttk.Label(self, text=label, style="Body.TLabel").grid(row=row_idx, column=0, padx=6, pady=4, sticky="w")
             self._entries[key] = {}
             for col_idx, axis in enumerate(("x", "y", "z"), start=1):
-                entry = ttk.Entry(self, width=16)
+                entry = ttk.Entry(self, width=9, style="Card.TEntry", justify="center")
                 entry.insert(0, "0.0")
-                entry.grid(row=row_idx, column=col_idx, padx=8, pady=6, sticky="ew")
+                entry.grid(row=row_idx, column=col_idx, padx=6, pady=4)
                 self._entries[key][axis] = entry
 
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=1)
-        self.columnconfigure(3, weight=1)
+        self.columnconfigure(1, weight=0)
+        self.columnconfigure(2, weight=0)
+        self.columnconfigure(3, weight=0)
 
         self.set_target_z_default(15000.0)
         self.set_horizontal_x_default(100.0)
@@ -60,6 +62,11 @@ class GeometryFrame(ttk.LabelFrame):
             self._set_entry(key, "x", float(p[0]))
             self._set_entry(key, "y", float(p[1]))
             self._set_entry(key, "z", float(p[2]))
+
+    def set_inputs_state(self, state: str) -> None:
+        for axis_entries in self._entries.values():
+            for entry in axis_entries.values():
+                entry.configure(state=state)
 
     def _read_point(self, key: str) -> np.ndarray:
         x = float(self._entries[key]["x"].get())
