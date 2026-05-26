@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPECTRA→ANSYS Heat Flux Mapping — System Flowchart</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg:       #0a0e1a;
+    --panel:    #111827;
+    --border:   #1e2d45;
+    --accent1:  #00c8ff;   /* ANSYS blue */
+    --accent2:  #ff6b35;   /* SPECTRA orange */
+    --accent3:  #39d98a;   /* math / output green */
+    --accent4:  #b06cff;   /* geometry purple */
+    --warn:     #ffcc00;   /* bug yellow */
+    --text:     #cdd5e0;
+    --dim:      #4a5568;
+    --white:    #f0f4f8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 32px 24px 64px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--white);
+  }
+  header h1 span { color: var(--accent1); }
+  header p {
+    margin-top: 8px;
+    color: var(--dim);
+    font-size: 12px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── LEGEND ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    justify-content: center;
+    margin-bottom: 40px;
+  }
+  .leg { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
+  .leg-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+  /* ── FLOW CONTAINER ── */
+  .flow {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  /* ── PHASE LABEL ── */
+  .phase {
+    font-family: 'Syne', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+    padding: 24px 0 8px 4px;
+  }
+
+  /* ── GENERIC NODE ── */
+  .node {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent1);
+    border-radius: 6px;
+    padding: 14px 18px;
+    position: relative;
+    cursor: default;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .node:hover { background: #15202f; }
+  .node.ansys  { border-left-color: var(--accent1); }
+  .node.spectra{ border-left-color: var(--accent2); }
+  .node.geo    { border-left-color: var(--accent4); }
+  .node.math   { border-left-color: var(--accent3); }
+  .node.output { border-left-color: var(--accent3); background: #0d1f17; border-color: #1a3329; }
+  .node.start  { border-left-color: var(--white);   background: #161b28; }
+  .node.bug    { border-left-color: var(--warn);     background: #1a1600; }
+  .node.form   { border-left-color: #888;            background: #131925; }
+
+  .node-icon {
+    font-size: 20px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .node-body { flex: 1; }
+  .node-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 4px;
+  }
+  .node-sub {
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.6;
+  }
+  .node-sub code {
+    background: #1e2d45;
+    color: var(--accent1);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .node-sub code.orange { color: var(--accent2); }
+  .node-sub code.green  { color: var(--accent3); }
+  .node-sub code.purple { color: var(--accent4); }
+  .node-sub code.warn   { color: var(--warn); background: #2a2000; }
+
+  /* badge */
+  .badge {
+    position: absolute;
+    top: 10px; right: 14px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+  }
+  .badge.module  { background: #1e2d45; color: var(--accent1); }
+  .badge.class   { background: #1f1535; color: var(--accent4); }
+  .badge.form-b  { background: #1a1a1a; color: #888; }
+  .badge.warn-b  { background: #2a2000; color: var(--warn); }
+  .badge.out-b   { background: #0d2a1c; color: var(--accent3); }
+
+  /* ── CONNECTOR ── */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    position: relative;
+  }
+  .connector::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: var(--border);
+  }
+  .connector-label {
+    background: var(--bg);
+    padding: 0 10px;
+    font-size: 10px;
+    color: var(--dim);
+    z-index: 1;
+    letter-spacing: 0.5px;
+  }
+  .connector-arrow {
+    background: var(--bg);
+    color: var(--accent1);
+    font-size: 14px;
+    z-index: 1;
+    padding: 0 4px;
+  }
+
+  /* ── PARALLEL BLOCK ── */
+  .parallel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* ── DECISION DIAMOND ── */
+  .decision-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0;
+  }
+  .decision {
+    background: #1a1600;
+    border: 1px solid var(--warn);
+    border-radius: 6px;
+    padding: 12px 24px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--warn);
+    font-weight: 600;
+    width: 340px;
+    position: relative;
+  }
+  .decision::before {
+    content: '◆';
+    position: absolute;
+    left: -14px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--warn);
+    font-size: 10px;
+  }
+  .decision::after {
+    content: '◆';
+    position: absolute;
+    right: -14px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--warn);
+    font-size: 10px;
+  }
+  .branch-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .branch-yes, .branch-no {
+    flex: 1;
+    border-radius: 5px;
+    padding: 10px 14px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .branch-yes { background: #0d1f17; border: 1px solid var(--accent3); color: var(--accent3); }
+  .branch-no  { background: #1a1000; border: 1px solid var(--accent2); color: var(--accent2); }
+  .branch-label { font-weight: 700; font-size: 10px; letter-spacing: 1px; margin-bottom: 4px; }
+
+  /* ── BUG TABLE ── */
+  .bug-section {
+    max-width: 900px;
+    margin: 48px auto 0;
+  }
+  .bug-section h2 {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--warn);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2000;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  th {
+    text-align: left;
+    padding: 8px 12px;
+    background: #15110a;
+    color: var(--warn);
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #2a2000;
+  }
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #1a1600;
+    color: var(--text);
+    vertical-align: top;
+    line-height: 1.6;
+  }
+  tr:hover td { background: #130f00; }
+  .sev-high   { color: #ff4444; font-weight: 700; }
+  .sev-med    { color: var(--warn); font-weight: 700; }
+  .sev-low    { color: var(--dim); }
+  .sev-none   { color: var(--accent3); }
+
+  /* ── FOOTER ── */
+  footer {
+    text-align: center;
+    margin-top: 56px;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AL-1605-0740 <span>SPECTRA → ANSYS</span> Heat Flux Mapping</h1>
+  <p>VBA SYSTEM FLOWCHART &nbsp;·&nbsp; version 6.0 &nbsp;·&nbsp; Albert Sheng &nbsp;·&nbsp; 2025</p>
+</header>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="leg"><div class="leg-dot" style="background:var(--accent1)"></div>ANSYS / readAnsys</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--accent2)"></div>SPECTRA / readSpectra</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--accent4)"></div>Geometry / sourceGeometry</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--accent3)"></div>Math / Interpolation / Output</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--warn)"></div>Known Bug / Risk</div>
+  <div class="leg"><div class="leg-dot" style="background:#888"></div>UserForm / UI</div>
+</div>
+
+<div class="flow">
+
+  <!-- ═══════════════ PHASE 0 ═══════════════ -->
+  <div class="phase">Phase 0 — User Input (form1 UserForm)</div>
+
+  <div class="node start form">
+    <div class="node-icon">🖥️</div>
+    <div class="node-body">
+      <div class="node-title">form1 — Main Control Panel</div>
+      <div class="node-sub">
+        User loads the workbook and calls <code>showForm()</code> from <code>main.bas</code>.<br>
+        Four input frames: ANSYS APDL file path · SPECTRA .dta file path ·
+        Source/Target/Side geometry points · Output path and filename.<br>
+        Buttons: <em>Upload ANSYS file</em> → <em>Upload SPECTRA file</em> → <em>Create external file</em> → <em>Exit</em>
+      </div>
+    </div>
+    <span class="badge form-b">UserForm</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <!-- ═══════════════ PHASE 1 ═══════════════ -->
+  <div class="phase">Phase 1 — Read ANSYS APDL File</div>
+
+  <div class="node ansys">
+    <div class="node-icon">📂</div>
+    <div class="node-body">
+      <div class="node-title">readAnsysFile() — State-machine parser</div>
+      <div class="node-sub">
+        File: <code>*.dat</code> (ANSYS APDL export).<br>
+        Estimates line count via file size ÷ 50 for progress bar scaling.<br>
+        Three-state FSM driven by <code>nextSection</code>: <code>"node"</code> / <code>"element"</code> / <code>"heat flux"</code> / <code>"nothing"</code>.<br>
+        Regex triggers: <code>"Nodes for the whole assembly"</code> · <code>"/com,*** Elements for"</code> · <code>"/com,*** Create "Heat Flux""</code>
+      </div>
+    </div>
+    <span class="badge module">readAnsys.bas</span>
+  </div>
+
+  <div class="connector"><span class="connector-label">state: node section detected, skip 3 header lines</span></div>
+
+  <div class="node ansys">
+    <div class="node-icon">📍</div>
+    <div class="node-body">
+      <div class="node-title">parseAnsysNodeLine() → ansysCoordinate object</div>
+      <div class="node-sub">
+        Each data line: <code>nodeID  X  Y  Z</code> (mm, ANSYS global CS).<br>
+        Strips leading/extra spaces via regex, splits on whitespace.<br>
+        Stores as <code>ansysCoordinate</code> class: <code>{inode, x, y, z}</code>.<br>
+        Adds to global <code>Collection ansysNodes</code> keyed by node number string.<br>
+        Terminates on line <code>"-1"</code>.
+      </div>
+    </div>
+    <span class="badge class">ansysCoordinate</span>
+  </div>
+
+  <div class="connector"><span class="connector-label">state: element section — count only, no storage (memory guard)</span></div>
+
+  <div class="node ansys">
+    <div class="node-icon">🔢</div>
+    <div class="node-body">
+      <div class="node-title">Element counting only — no Collection storage</div>
+      <div class="node-sub">
+        ANSYS SOLID186 / SOLID187 elements span 2 lines (nodes 1–10, then midpoints 11–20).<br>
+        Lines are concatenated (<code>stringLine1 & " " & stringLine</code>), <code>totalElementCount</code> incremented.<br>
+        <code>parseAnsysElementLine()</code> function exists but is intentionally commented out to avoid memory overflow on large models.
+      </div>
+    </div>
+    <span class="badge class">ansysElement</span>
+  </div>
+
+  <div class="connector"><span class="connector-label">state: heat flux section, skip 4 header lines</span></div>
+
+  <div class="node ansys">
+    <div class="node-icon">🌡️</div>
+    <div class="node-body">
+      <div class="node-title">parseAnsysHeatFluxLine() → ansysHeatFlux object</div>
+      <div class="node-sub">
+        Extracts element number + 8 nodes (indices 5–12 in the APDL surface element record).<br>
+        Corner nodes: 5,6,7,8 · Midside nodes: 9,10,11,12.<br>
+        Looks up each node number in <code>ansysNodes</code> Collection → stores <code>ansysCoordinate</code> references.<br>
+        Immediately calls <code>calculateHeatFluxSurfaceArea()</code> via <code>quadrilaterialArea()</code> using corner nodes 1–4.<br>
+        Adds to <code>Collection ansysHeatFluxElements</code>.
+      </div>
+    </div>
+    <span class="badge class">ansysHeatFlux</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span><span class="connector-label">ansysNodes + ansysHeatFluxElements populated</span></div>
+
+  <!-- ═══════════════ PHASE 2 ═══════════════ -->
+  <div class="phase">Phase 2 — Read SPECTRA Power Density File</div>
+
+  <div class="node spectra">
+    <div class="node-icon">⚡</div>
+    <div class="node-body">
+      <div class="node-title">readSpectraFile() — Parse SPECTRA x-y mesh output</div>
+      <div class="node-sub">
+        File: <code>*.dta</code> / <code>*.data</code> / <code>*.dta2</code> — space-delimited, 2 header lines skipped (<code>i &gt; 1</code>).<br>
+        Each data line: <code>xmrad  ymrad  powerDensity[kW/mrad²]</code>.<br>
+        Auto-detects <code>spectraTotalColumn</code>: when <code>ymrad</code> changes value for the first time, that index − 1 = number of x-columns.<br>
+        Tracks <code>spectraPeakPowerDensity</code> and accumulates <code>spectraTotalPower</code>.
+      </div>
+    </div>
+    <span class="badge module">readSpectra.bas</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="node spectra">
+    <div class="node-icon">🔲</div>
+    <div class="node-body">
+      <div class="node-title">Build powerDensityElement Collection — bilinear elements</div>
+      <div class="node-sub">
+        Total elements = (rows−1) × (cols−1).<br>
+        Node layout per element (1-indexed, reading order):
+        <pre style="margin:6px 0;padding:6px 10px;background:#0d0d0d;border-radius:4px;color:#888;font-size:10px;">
+  Node1(x₁,y₂) ── Node3(x₂,y₂)
+      |                   |
+  Node2(x₁,y₁) ── Node4(x₂,y₁)</pre>
+        Each <code>powerDensityElement</code> stores: four node refs, element area (mrad²), average power density, total power (kW),
+        and calls <code>calculcateInterpolateCoefficients()</code> to pre-compute bilinear coefficients a₀…a₃.
+      </div>
+    </div>
+    <span class="badge class">powerDensityElement</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span><span class="connector-label">SpectraPowerNodes + spectraPowerElements populated</span></div>
+
+  <!-- ═══════════════ PHASE 3 ═══════════════ -->
+  <div class="phase">Phase 3 — Geometry: Coordinate System Definition</div>
+
+  <div class="node geo">
+    <div class="node-icon">📐</div>
+    <div class="node-body">
+      <div class="node-title">sourceGeometry.initialized() — Build orthonormal basis</div>
+      <div class="node-sub">
+        Three control points read from <code>form1</code>:<br>
+        &nbsp;· <code>Source (xₛ,yₛ,zₛ)</code> — photon source point (e.g. centre of undulator)<br>
+        &nbsp;· <code>Target (xₜ,yₜ,zₜ)</code> — beam axis reference point (defines <strong>ê_Z</strong>)<br>
+        &nbsp;· <code>Side (xₚ,yₚ,zₚ)</code> — in-plane side point (defines <strong>ê_X</strong> direction)<br><br>
+        Constructs local basis:<br>
+        &nbsp;&nbsp;<code class="purple">ê_Z = (Target − Source) / |…|</code><br>
+        &nbsp;&nbsp;<code class="purple">ê_Y = ê_Z × ê_X_raw</code> &nbsp;(cross product)<br>
+        &nbsp;&nbsp;All three vectors orthonormalized via <code>orthonormalize()</code>.<br>
+        Displayed on form as <em>Base vector X/Y/Z</em>.
+      </div>
+    </div>
+    <span class="badge class">sourceGeometry</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <!-- ═══════════════ PHASE 4 ═══════════════ -->
+  <div class="phase">Phase 4 — Main Mapping Loop (storeAnsysInterpolateCoordinateAndPower)</div>
+
+  <div class="node math">
+    <div class="node-icon">🔁</div>
+    <div class="node-body">
+      <div class="node-title">Loop over all ansysHeatFluxElements</div>
+      <div class="node-sub">
+        For each heat flux surface element <em>i</em> (1 … N_hf):
+      </div>
+    </div>
+    <span class="badge module">main.bas</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="node math">
+    <div class="node-icon">📌</div>
+    <div class="node-body">
+      <div class="node-title">Step 4a — Compute element centroid (x̄, ȳ, z̄)</div>
+      <div class="node-sub">
+        Average the 4 corner node coordinates:<br>
+        <code>x̄ = (x₁+x₂+x₃+x₄)/4</code> &nbsp; same for ȳ, z̄ &nbsp;[mm, ANSYS global CS]
+      </div>
+    </div>
+    <span class="badge class">ansysHeatFlux</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="node math">
+    <div class="node-icon">🧭</div>
+    <div class="node-body">
+      <div class="node-title">Step 4b — mapAnsysCoordinateToMrad() — Project to angular space</div>
+      <div class="node-sub">
+        Displacement from source: <code>v = (x̄−xₛ, ȳ−yₛ, z̄−zₛ)</code><br>
+        Distance: <code>R = |v|</code> [mm]<br>
+        Angular projection using local basis vectors:<br>
+        <code>xmrad = arcsin( v · ê_X / R ) × 1000</code><br>
+        <code>ymrad = arcsin( v · ê_Y / R ) × 1000</code><br>
+        <em>Note: arcsin valid for small-angle regime (&lt;5 mrad), appropriate for synchrotron undulator radiation.</em>
+      </div>
+    </div>
+    <span class="badge class">ansysHeatFlux</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="decision-wrap">
+    <div class="decision">
+      fallIntoThisSpectraElement(xmrad, ymrad) &gt; 0 ?
+    </div>
+  </div>
+  <div class="branch-row">
+    <div class="branch-yes">
+      <div class="branch-label">✓ YES — inside SPECTRA grid</div>
+      whichElement = column-then-row linear search.<br>
+      Retrieve <code>powerDensityElement</code> from <code>spectraPowerElements</code>.<br>
+      Call <code>calculateInterpolatePower()</code>.
+    </div>
+    <div class="branch-no">
+      <div class="branch-label">✗ NO — outside SPECTRA boundary</div>
+      Element skipped silently.<br>
+      <code>normalPowerDensity</code> remains 0.<br>
+      Contributes zero heat load to output.
+    </div>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span><span class="connector-label">for the YES branch</span></div>
+
+  <div class="node math">
+    <div class="node-icon">📊</div>
+    <div class="node-body">
+      <div class="node-title">Step 4c — Bilinear interpolation of power density</div>
+      <div class="node-sub">
+        Retrieve pre-computed coefficients a₀…a₃ from <code>spectraElement.interpolateCoefficients</code>.<br>
+        <code class="green">φ_normal = a₀ + a₁·xmrad + a₂·ymrad + a₃·xmrad·ymrad &nbsp;[kW/mrad²]</code><br><br>
+        Coefficient derivation (Wikipedia bilinear, node layout as above):<br>
+        <code>a₀ = (f₂·x₂y₂ − f₁·x₂y₁ − f₄·x₁y₂ + f₃·x₁y₁) / Δ</code><br>
+        <code>a₁ = (−f₂·y₂ + f₁·y₁ + f₄·y₂ − f₃·y₁) / Δ</code><br>
+        <code>a₂ = (−f₂·x₂ + f₁·x₂ + f₄·x₁ − f₃·x₁) / Δ</code><br>
+        <code>a₃ = (f₂ − f₁ − f₄ + f₃) / Δ</code> &nbsp; where Δ = (x₂−x₁)(y₂−y₁)
+      </div>
+    </div>
+    <span class="badge class">powerDensityElement</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="node math">
+    <div class="node-icon">📐</div>
+    <div class="node-body">
+      <div class="node-title">Step 4d — getGrazingAngleInRadian() — Surface normal & beam incidence</div>
+      <div class="node-sub">
+        Edge vectors from corner node 2 (pivot):<br>
+        <code>v₁ = node1 − node2</code> &nbsp;(ji direction)<br>
+        <code>v₂ = node3 − node2</code> &nbsp;(jk direction)<br>
+        Surface normal: <code>n = v₂ × v₁</code> (normalized) &nbsp;← code reverses order vs comment; <code>Abs()</code> compensates.<br>
+        Grazing angle: <code class="green">θ = |π/2 − arccos( n̂ · v̂ )|</code><br>
+        where <code>v̂ = (x̄−xₛ, ȳ−yₛ, z̄−zₛ) / R</code> is the beam direction unit vector.
+      </div>
+    </div>
+    <span class="badge class">ansysHeatFlux</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span></div>
+
+  <div class="node math">
+    <div class="node-icon">⚗️</div>
+    <div class="node-body">
+      <div class="node-title">Step 4e — Unit conversion and projected power density</div>
+      <div class="node-sub">
+        Angular → spatial flux (inverse-square law):<br>
+        <code class="green">φ_normal [W/mm²] = φ_normal [kW/mrad²] × 10⁹ / R[mm]²</code><br>
+        &nbsp;&nbsp;&nbsp; (= × 1000 / (R/1000)²)<br>
+        Projection onto surface (Lambert's cosine for grazing geometry):<br>
+        <code class="green">φ_projected [W/mm²] = sin(θ) × φ_normal [W/mm²]</code><br>
+        Total power on element:<br>
+        <code class="green">P_total [W] = A_surface [mm²] × φ_projected [W/mm²]</code>
+      </div>
+    </div>
+    <span class="badge class">ansysHeatFlux</span>
+  </div>
+
+  <div class="connector"><span class="connector-arrow">↓</span><span class="connector-label">all elements processed</span></div>
+
+  <!-- ═══════════════ PHASE 5 ═══════════════ -->
+  <div class="phase">Phase 5 — Output: Write ANSYS External Data File</div>
+
+  <div class="node output">
+    <div class="node-icon">💾</div>
+    <div class="node-body">
+      <div class="node-title">writeAnsysHeatFluxElements() — Generate .inp file</div>
+      <div class="node-sub">
+        Reads <code>totalPowerRatio</code> from form (scaling factor for partial-beam scenarios, default 1.0).<br>
+        For each heat flux element, writes one CSV line:<br>
+        <code class="green">x,  y,  z,  φ_proj×ratio,  φ_proj  [0.0000E+00 format]</code><br>
+        <em>Known issue: <code>arrayString(10)</code> declaration adds 6 trailing zero columns — see Bug #1 below.</em><br>
+        Updates form labels: total elements output, total power in kW.<br>
+        Enables <em>View file location</em> button. Shows completion <code>MsgBox</code>.<br>
+        On exit: <code>backupFormParameters()</code> saves all settings to <code>.backup.txt</code> in ANSYS file directory.
+      </div>
+    </div>
+    <span class="badge out-b">OUTPUT</span>
+  </div>
+
+</div><!-- end .flow -->
+
+
+<!-- ═══════════════ BUG TABLE ═══════════════ -->
+<div class="bug-section">
+  <h2>⚠ Confirmed Bugs &amp; Code Issues</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Location</th>
+        <th>Severity</th>
+        <th>Description</th>
+        <th>Effect on Output</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><code>main.bas</code><br>writeAnsysHeatFluxElements</td>
+        <td class="sev-high">HIGH</td>
+        <td><code>Dim arrayString(10)</code> — declares 11 slots, fills only 5 (index 0–4). Trailing 6 slots formatted as <code>"0.0000E+00"</code>.</td>
+        <td>Every output line has 6 extra zero columns. May cause ANSYS External Data column-mapping failure.</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><code>ansysHeatFlux.cls</code><br>getGrazingAngleInRadian</td>
+        <td class="sev-med">MEDIUM</td>
+        <td>Cross product computed twice. First (correct: v1×v2) overwritten by second (incorrect: v2×v1 = −n). <code>Abs()</code> masks the sign reversal.</td>
+        <td>Currently correct due to <code>Abs()</code>. Fragile: removing <code>Abs()</code> in a future edit would corrupt all grazing angles.</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><code>ansysHeatFlux.cls</code><br>dotProduct()</td>
+        <td class="sev-med">MEDIUM</td>
+        <td><code>v1(3)*v2(3)</code> should be <code>v1(2)*v2(2)</code>. Z-component of 3D dot product uses index 3 instead of 2.</td>
+        <td>Zero runtime impact — function is declared but never called anywhere in the active code path.</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td><code>powerDensityElement.cls</code><br>putElementNodes</td>
+        <td class="sev-low">LOW</td>
+        <td>Loop accumulates into <code>averagePowreDensity</code> (typo — undeclared variable = 0 always). Result immediately overwritten by correct 4-node average.</td>
+        <td>None — dead loop. Final <code>averagePowerDensity</code> is correct.</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td><code>sourceGeometry.cls</code><br>getVZ()</td>
+        <td class="sev-low">LOW</td>
+        <td><code>ReDim getVY(2)</code> inside <code>getVZ()</code> — should be <code>ReDim getVZ(2)</code>.</td>
+        <td>None — assignment <code>getVZ = zV</code> immediately follows, overriding the ReDim result.</td>
+      </tr>
+      <tr>
+        <td>—</td>
+        <td>Bilinear interpolation matrix<br><code>powerDensityElement.cls</code></td>
+        <td class="sev-none">NOT A BUG</td>
+        <td>Diagonal extraction <code>matrixC(i,i)</code> looks wrong but is correct: matrixB is a 1D vector so all columns of matrixC are identical.</td>
+        <td>N/A — mathematically verified correct via symbolic computation.</td>
+      </tr>
+      <tr>
+        <td>—</td>
+        <td>Unit conversion<br><code>ansysHeatFlux.cls</code></td>
+        <td class="sev-none">NOT A BUG</td>
+        <td><code>pd × 1000 / (R/1000)²</code> correctly converts kW/mrad² → W/mm² via R in mm.</td>
+        <td>N/A — verified: 1 kW/mrad² = 10⁹ W/m² at unit solid angle; ÷R_m² = ÷(R_mm/1000)².</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<footer>
+  AL-1605-0740 &nbsp;·&nbsp; SPECTRA→ANSYS Heat Flux Node Assignment &nbsp;·&nbsp; v6.0 &nbsp;·&nbsp; Flowchart generated 2026
+</footer>
+
+</body>
+</html>

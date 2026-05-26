@@ -1,6 +1,6 @@
 # SPEC.md - Insertion-Device Python/Tk Rewrite Contract
 
-Last updated: 2026-05-25
+Last updated: 2026-05-25 (v2.0 UI sync)
 Project root: `K:\ANSYS heat flux assignment`
 
 ## 1. Goal
@@ -91,6 +91,10 @@ Left column cards:
   - total nodes
   - total elements
   - flux elements
+- Cache controls in same card:
+  - `Delete current`
+  - `Delete all`
+  - `Browse...` (cache browser)
 
 2. `SPECTRA POWER DENSITY FILE`
 - File path field
@@ -105,26 +109,29 @@ Left column cards:
 3. `SOURCE GEOMETRY (MM)`
 - 3 rows: Source (S), Target (T), Horizontal point (H)
 - Columns: X, Y, Z
-- `Update geometry` action (button or auto-validate on edit)
+- `Update geometry` action (explicit button)
 
 Right column cards:
 1. `OUTPUT - ANSYS EXTERNAL DATA FILE`
 - Output folder field + browse
 - Output filename field
 - Power ratio field
+- Primary execute button: `Map elemental power density`
 
 2. `MAPPING PROGRESS`
 - Mapping progress bar (%)
 - Output elements
-- Total power out
-- Total power (SPECTRA)
+- Total power out (formatted as `0.000 kW`)
+- Total power (SPECTRA) (formatted as `0.000 kW`)
 
 3. Actions
-- Primary: `Create heat flux file`
+- Secondary: `Load backup file...`
+- Secondary: `Rerun from backup`
 - Secondary: `View file location`
 - Danger: `Exit Session`
 Notes:
 - `View file location` opens output file in Explorer when available; falls back to parent folder.
+- `Run sample validation` is not exposed in the main UI.
 
 ## 6. Progress Bar Requirements
 
@@ -133,16 +140,15 @@ Two upload/parse progress bars are mandatory:
 1. ANSYS progress bar
 - Active during ANSYS file parsing.
 - Must emit incremental updates (not only 0% and 100%).
-- Recommended parse phases:
-  - detect sections
-  - parse nodes
-  - parse elements
-  - parse heatflux set
-  - finalize structures
+- Implementation detail:
+  - ANSYS parsing runs in a background thread to keep Tk responsive.
+  - Progress updates include live counters (`nodes`, `elements`, `flux`) and are throttled.
 
 2. SPECTRA progress bar
 - Active during SPECTRA file parsing.
 - Must emit incremental updates while reading rows and building grid/elements.
+- Implementation detail:
+  - SPECTRA progress is phased: row read + element build.
 
 Separate mapping progress:
 - Active only during mapping/export pipeline.
@@ -176,12 +182,13 @@ Because ANSYS `.dat` can be very large, add a reusable parse cache:
 Implemented:
 - Delete cache for current ANSYS file.
 - Clear all ANSYS cache entries.
+- Cache save after parse is asynchronous (non-blocking UI).
 
 ## 7. UI State Machine
 
 State `IDLE`
 - Enabled: both upload buttons, geometry fields, output settings.
-- Disabled: create file, view location.
+- Disabled: map action, view location.
 
 State `ANSYS_LOADING`
 - Disable ANSYS upload button and create action.
@@ -198,7 +205,7 @@ State `READY_TO_MAP`
   - geometry valid
   - output folder/filename valid
   - power ratio parseable float
-- Enable `Create heat flux file`.
+- Enable `Map elemental power density`.
 
 State `MAPPING`
 - Disable all upload/geometry/output edits that would invalidate run.
@@ -207,7 +214,7 @@ State `MAPPING`
 State `DONE`
 - Mapping finished successfully.
 - Enable `View file location`.
-- Keep `Create heat flux file` enabled for rerun.
+- Keep `Map elemental power density` enabled for rerun.
 
 State `ERROR`
 - Show recoverable error dialog/status.
