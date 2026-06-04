@@ -31,6 +31,15 @@ Do not work on BM folder.
   - Reuse prompt when valid cache exists
   - Delete current / delete all / cache browser
   - Async cache save after parse
+- SPECTRA cache (full parity with ANSYS, completed 2026-06-04 in commit `baa8c1a`):
+  - Cache reuse prompt in `_load_spectra_for_path`
+  - Delete current / Delete all / Browse... buttons in SPECTRA card
+    (placed directly below the orange progress separator)
+  - Dedicated `SPECTRA Cache Browser` Toplevel (mirrors ANSYS browser)
+  - Async cache save after successful parse (`_save_spectra_cache_async`)
+  - Cache hint label reflects on-disk cache availability at startup
+    via lightweight `ansys_cache_file_exists` / `spectra_cache_file_exists`
+    helpers (Path.exists() only — full validity verified at Upload time)
 - Session backup:
   - Save/restore wired to `session_backups/`
   - Backup filename uses ANSYS stem + datetime
@@ -52,6 +61,17 @@ Do not work on BM folder.
   - `_post_warning(msg)` / `_clear_warning()` methods in `app_window.py`
   - Triggered after mapping if out-of-grid > 5%
   - No new modal dialogs added
+- UI usability improvements (commit `baa8c1a`):
+  - `Browse...` buttons next to both ANSYS and SPECTRA path entries
+    (no longer need to clear the entry to bring up the file picker)
+  - Path entry auto-scrolls to end on `<Map>` + `<FocusOut>` so the
+    filename is visible by default instead of the drive root
+  - Small `Selected: <filename>` label below each path entry
+  - Left/right panels balanced 5:5 (`uniform="panels"`)
+  - Window default 1080×1040, minsize 1080×980 (was 1000×900 / 1080×820)
+    so Source Geometry section fits without resizing
+  - Upload buttons sized to text content (removed `width=19`)
+  - Header version label bumped to `version 2.0`
 - Current UI labels/actions:
   - Execute button: `Map elemental power density`
   - Mapping totals formatting:
@@ -83,7 +103,9 @@ Do not work on BM folder.
   - `heatflux/config/app_logger.py`   ← rotating file logger setup
   - `heatflux.log`                     ← written at runtime (not committed)
 - ANSYS cache:
-  - `heatflux/config/ansys_cache.py`
+  - `heatflux/config/ansys_cache.py`   ← includes `ansys_cache_file_exists` (lightweight)
+- SPECTRA cache:
+  - `heatflux/config/spectra_cache.py` ← includes `spectra_cache_file_exists` (lightweight)
 - Session backup:
   - `heatflux/config/session_backup.py`
 - I/O:

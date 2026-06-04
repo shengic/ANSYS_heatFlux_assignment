@@ -533,4 +533,56 @@ def _clear_warning(self) -> None:
 
 觸發條件：mapping 完成後 `out_of_grid_count / len(mapped) > 0.05`。
 
-*v2.1：新增 §14 logging 架構。*
+---
+
+## 15. UI 可用性與 Cache Hint（2026-06-04 commit `baa8c1a`）
+
+### 15.1 SPECTRA cache 與 ANSYS 完全對等
+
+| 元件 | ANSYS | SPECTRA |
+|------|-------|---------|
+| Cache 模組 | `ansys_cache.py` | `spectra_cache.py` |
+| `save_*` async 包裝 | `_save_ansys_cache_async` | `_save_spectra_cache_async` |
+| Load 時重用 prompt | `_load_ansys_for_path` | `_load_spectra_for_path` |
+| Card 內 cache 控制 | `stats_right` 區塊 | `cache_row`（接 separator 之下）|
+| 獨立 cache browser | `_open_cache_browser` | `_open_spectra_cache_browser` |
+| Hint label 自動更新 | `ansys_cache_var` | `spectra_cache_var` |
+
+### 15.2 Cache hint label 邏輯
+
+`_refresh_cache_hint(path_var, cache_var, exists_fn)` 由 `path_var` 的 `trace_add("write", ...)` 觸發：
+
+```
+path 空                            → "Cache source: none"
+path 有值 + cache 檔存在            → "Cache source: cache available for this file"
+path 有值 + cache 檔不存在          → "Cache source: no cache for this file"
+Upload 點下後                       → "checking..." → "loaded from cache" / "parsed from file"
+                                     （由 _load_*_for_path 流程覆蓋）
+```
+
+**為何不直接呼叫 `has_valid_*_parse_cache`**：那會做完整 `.npz` 反序列化，trace 在每次 keystroke 都會 fire，成本太高。新增 `ansys_cache_file_exists` / `spectra_cache_file_exists` 只做 `Path.exists()`（sub-ms）。Validity 留給 Upload 時的完整檢查。
+
+### 15.3 Path entry UX
+
+```python
+# 1. 自動捲尾顯示檔名（解決長路徑只看到磁碟代號）
+self.{ansys,spectra}_path_entry.bind("<Map>",      lambda _: entry.xview_moveto(1.0))  # 首次 mapped
+self.{ansys,spectra}_path_entry.bind("<FocusOut>", lambda _: entry.xview_moveto(1.0))  # 失焦後再對齊
+
+# 2. 檔名 label（永遠可見）
+ttk.Label(path_box, textvariable=self.{ansys,spectra}_filename_display_var, style="Body.TLabel")
+# trace 自動更新為 "Selected: <Path(raw).name>" 或空字串
+```
+
+### 15.4 版面常數
+
+```python
+self.root.geometry("1080x1040")        # 預設大小，Source Geometry 可完整顯示
+self.root.minsize(1080, 980)           # 最小尺寸
+body.columnconfigure(0, weight=1, uniform="panels")   # 左右 5:5
+body.columnconfigure(1, weight=1, uniform="panels")
+```
+
+Upload 按鈕：移除 `width=19`，`sticky="nw"` → 寬度自動 fit 文字。
+
+*v2.2：新增 §15 UI 可用性與 cache hint 設計。*

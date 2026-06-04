@@ -1,6 +1,6 @@
 # AL-1605-0740 — SPECTRA → ANSYS Heat Flux Assignment
 ## Python/Tk 移植專案結構文件
-**Version 2.1 · Albert Sheng · 2026-06-04**
+**Version 2.2 · Albert Sheng · 2026-06-04**
 **依據 12-Rule Template 設計**
 
 ---
@@ -113,7 +113,7 @@ tests      →  可引用所有層；絕不引用 gui
 
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
-| `app_window.py` | `form1` (UserForm) | 主視窗 (`ttk.Frame`)。包含四個區塊：ANSYS 檔案、SPECTRA 檔案、幾何設定、輸出設定。管理按鈕啟用/停用狀態序列（Upload ANSYS → Upload SPECTRA → Create file）。顯示統計標籤。Footer 含兩個 label：左 = `footer_status_var`（系統狀態），右 = `warn_strip_var`（橘色警告條，12 秒後自動消失）。`_post_warning(msg)` 觸發警告條；mapping 完成後若 out-of-grid > 5% 自動觸發。 |
+| `app_window.py` | `form1` (UserForm) | 主視窗 (`ttk.Frame`)。包含四個區塊：ANSYS 檔案、SPECTRA 檔案、幾何設定、輸出設定。左右面板 5:5（`uniform="panels"`），預設 1080×1040。管理按鈕啟用/停用狀態序列（Upload → Map）。Footer 含兩個 label：左 = `footer_status_var`，右 = `warn_strip_var`（橘色 12 秒自動消失）。**ANSYS/SPECTRA 卡片**：path entry 旁有 `Browse...` 按鈕；entry 下方有 `Selected: <filename>` 小字 label；entry 在 `<Map>`/`<FocusOut>` 時 `xview_moveto(1.0)` 顯示檔名而非根目錄。**Cache 控制列**：兩張卡片各有 `Cache source:` label + Delete current / Delete all / Browse... 三顆按鈕；hint label 由 `_refresh_cache_hint()` 根據 `*_cache_file_exists()` 在 path 變動時自動更新。ANSYS / SPECTRA 各有獨立 cache browser Toplevel。 |
 | `geometry_frame.py` | `form1` 幾何輸入區 | Source / Target / Side 三點各 3 個 `ttk.Entry`（共 9 欄）。「Update geometry」按鈕觸發重新計算。顯示計算後的正交基底向量 ê_X, ê_Y, ê_Z（唯讀標籤）。 |
 | `progress_dialog.py` | `UserForm1` | Modal `tk.Toplevel`，內含 `ttk.Progressbar`。由 `mapping_pipeline.py` 透過 callback 更新進度值。 |
 
@@ -177,6 +177,8 @@ tests      →  可引用所有層；絕不引用 gui
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
 | `app_logger.py` | ─（新增）| `setup_logging(log_path)` — 一次性初始化 rotating file handler，寫入 `heatflux.log`（5 MB × 3 份）。DEBUG 等級，完全靜默。由 `main.py` 在 Tk 啟動前呼叫。所有模組用 `logging.getLogger(__name__)` 取得 logger。 |
+| `ansys_cache.py` | ─（新增）| ANSYS parse cache：`save_*` / `load_*` / `delete_*` / `clear_all_*` / `has_valid_*_parse_cache`（完整 load 驗證）/ `ansys_cache_file_exists`（輕量：僅 `Path.exists()`，供 UI hint 用）/ `list_*_entries`（cache browser）。Cache key = sha256(resolved source path)，存於 `.cache/ansys/*.npz`。 |
+| `spectra_cache.py` | ─（新增）| 結構與 ANSYS 對等：`save_*` / `load_*` / `delete_*` / `clear_all_*` / `has_valid_spectra_parse_cache` / `spectra_cache_file_exists`（輕量）/ `list_spectra_parse_cache_entries`。存於 `.cache/spectra/*.npz`。 |
 | `session_backup.py` | `backupModule.bas` | `save_backup() / load_backup()`。格式：`.backup.json`。儲存/載入路徑記錄到 log。 |
 
 ---
