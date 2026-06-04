@@ -1,6 +1,6 @@
 # RESUME_NEXT.md
 
-Last updated: 2026-05-25
+Last updated: 2026-06-04
 Project: `K:\ANSYS heat flux assignment`
 Scope: insertion-device rewrite (`.xlsm` -> Python + Tk)
 
@@ -35,6 +35,23 @@ Do not work on BM folder.
   - Save/restore wired to `session_backups/`
   - Backup filename uses ANSYS stem + datetime
   - Rerun from backup supported
+- Logging / observability (added 2026-06-04):
+  - `heatflux/config/app_logger.py` — rotating file logger, writes to `heatflux.log`
+    (5 MB × 3 backups, DEBUG level, completely silent to UI)
+  - Called once in `main.py` before Tk starts
+  - All modules use `logging.getLogger(__name__)`
+  - Key events logged: file parse start/end with duration, node/element/flux counts,
+    grid dimensions, output path and line count, mapping out-of-grid stats,
+    session backup save/load, user actions (upload, map), overwrite warnings
+  - WARNING level: flux=0, node=0, SPECTRA grid <3×3, output overwrite,
+    out-of-grid >5%, skipped heat flux lines (with reason)
+  - ERROR level: mapping exceptions (with exc_info for traceback)
+- GUI warning strip (added 2026-06-04):
+  - Footer now has two labels: left = `footer_status_var` (was wired to no widget — fixed),
+    right = `warn_strip_var` (orange, auto-clears after 12 s)
+  - `_post_warning(msg)` / `_clear_warning()` methods in `app_window.py`
+  - Triggered after mapping if out-of-grid > 5%
+  - No new modal dialogs added
 - Current UI labels/actions:
   - Execute button: `Map elemental power density`
   - Mapping totals formatting:
@@ -47,8 +64,8 @@ Do not work on BM folder.
 ## First Commands To Run
 
 ```powershell
-.\\.venv\\Scripts\\python.exe -m pytest -q
-.\\.venv\\Scripts\\python.exe main.py
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe main.py
 ```
 
 ## Key Files
@@ -56,12 +73,15 @@ Do not work on BM folder.
 - Spec and docs:
   - `spec.md`
   - `CONTEXT.md`
-  - `system documentation markdown` (legacy-named file in project root)
+  - `AL-1605-0740_system_documentation.md` (legacy VBA reference)
   - `TDD_TEST_PLAN.md`
 - App:
   - `main.py`
   - `heatflux/gui/app_window.py`
   - `heatflux/gui/geometry_frame.py`
+- Logging:
+  - `heatflux/config/app_logger.py`   ← rotating file logger setup
+  - `heatflux.log`                     ← written at runtime (not committed)
 - ANSYS cache:
   - `heatflux/config/ansys_cache.py`
 - Session backup:
@@ -80,9 +100,9 @@ Do not work on BM folder.
 
 ## Next Priorities
 
-1. Final UI polish pass (spacing/borders/alignment consistency on target display scale).
-2. End-to-end run with real large `.dat` + `.dta` files and verify responsiveness.
-3. Compare key output stats against legacy `.xlsm` reference output.
+1. End-to-end run with real large `.dat` + `.dta` files and verify responsiveness.
+2. Compare key output stats against legacy `.xlsm` reference output.
+3. Final UI polish pass (spacing/borders/alignment consistency on target display scale).
 4. Optional:
    - keep/refine cache browser UX
    - add dedicated formatting tests for UI status strings (if desired)

@@ -37,6 +37,18 @@ def has_valid_spectra_parse_cache(source_path: Path) -> bool:
         return False
 
 
+def spectra_cache_file_exists(source_path: Path) -> bool:
+    """Lightweight check: does a cache file exist for this source path?
+
+    Does NOT validate cache content against source size/mtime — that requires a full load.
+    Use has_valid_spectra_parse_cache() for full validation.
+    """
+    try:
+        return _cache_path_for_source(source_path.resolve()).exists()
+    except Exception:
+        return False
+
+
 def delete_spectra_parse_cache(source_path: Path) -> bool:
     cache_path = _cache_path_for_source(source_path.resolve())
     if cache_path.exists():

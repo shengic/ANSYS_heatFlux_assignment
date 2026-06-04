@@ -480,4 +480,57 @@ tkinter 為標準庫內建。pytest 為開發依賴，不列入 requirements.txt
 
 ---
 
-*v2.0：新增 §3–§4 效能設計章節。供 Claude Code 開發時參考。*
+---
+
+## 14. Logging 架構（2026-06-04 新增）
+
+### 14.1 設計原則
+
+- **完全靜默**：所有 log 寫入 `heatflux.log`，不輸出 console，不增加 modal dialog
+- **非阻斷警告**：GUI 只在 footer 警告條顯示重要警告（橘色，12 秒後自動消失）
+- 等級分工：DEBUG = 內部流程；INFO = 重要事件；WARNING = 需注意但不阻斷；ERROR = 例外含 traceback
+
+### 14.2 初始化
+
+```python
+# main.py — Tk 啟動前呼叫
+from heatflux.config.app_logger import setup_logging
+setup_logging()   # 寫入 heatflux.log，5 MB × 3 份 rotating
+```
+
+所有模組的 module-level logger：
+```python
+import logging
+_log = logging.getLogger(__name__)
+```
+
+### 14.3 各模組 log 事件速查
+
+| 模組 | INFO | WARNING |
+|------|------|---------|
+| `ansys_reader.py` | 檔案大小、解析耗時、counts | flux=0、node=0、跳過 hf 行（含原因） |
+| `spectra_reader.py` | grid 尺寸、峰值 PD、耗時 | grid < 3×3 |
+| `output_writer.py` | 輸出路徑、行數、耗時 | 目標檔已存在（覆蓋） |
+| `mapping_pipeline.py` | 開始條件、耗時、out-of-grid 統計 | out-of-grid > 5% |
+| `session_backup.py` | save/load 路徑 | — |
+| `app_window.py` | 使用者操作、mapping 完成統計 | UI 警告條觸發（ERROR：mapping 例外含 traceback） |
+
+### 14.4 GUI 警告條
+
+```python
+# app_window.py
+self.warn_strip_var = tk.StringVar(value="")   # footer 右側，橘色
+self._warn_after_id: str | None = None
+
+def _post_warning(self, msg: str, duration_ms: int = 12000) -> None:
+    # 取消舊計時 → 設文字 → 12s 後自動清除
+    ...
+
+def _clear_warning(self) -> None:
+    self.warn_strip_var.set("")
+    self._warn_after_id = None
+```
+
+觸發條件：mapping 完成後 `out_of_grid_count / len(mapped) > 0.05`。
+
+*v2.1：新增 §14 logging 架構。*

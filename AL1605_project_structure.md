@@ -1,6 +1,6 @@
 # AL-1605-0740 — SPECTRA → ANSYS Heat Flux Assignment
 ## Python/Tk 移植專案結構文件
-**Version 2.0 · Albert Sheng · 2025**
+**Version 2.1 · Albert Sheng · 2026-06-04**
 **依據 12-Rule Template 設計**
 
 ---
@@ -22,6 +22,7 @@ ANSYS heat flux assignment/
 ├── main.py
 ├── requirements.txt
 ├── README.md
+├── heatflux.log              ← 執行時產生，rotating（5 MB × 3），不提交
 │
 ├── heatflux/
 │   ├── __init__.py
@@ -56,6 +57,9 @@ ANSYS heat flux assignment/
 │   │   └── mapping_pipeline.py          ← 新增向量化路徑；保留逐元素路徑供 debug
 │   └── config/
 │       ├── __init__.py
+│       ├── app_logger.py            ← 新增：rotating file logger 初始化
+│       ├── ansys_cache.py
+│       ├── spectra_cache.py
 │       └── session_backup.py
 │
 └── tests/
@@ -109,7 +113,7 @@ tests      →  可引用所有層；絕不引用 gui
 
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
-| `app_window.py` | `form1` (UserForm) | 主視窗 (`ttk.Frame`)。包含四個區塊：ANSYS 檔案、SPECTRA 檔案、幾何設定、輸出設定。管理按鈕啟用/停用狀態序列（Upload ANSYS → Upload SPECTRA → Create file）。顯示統計標籤（節點數、元素數、熱通量元素數、grid 維度、峰值功率密度、總功率）。 |
+| `app_window.py` | `form1` (UserForm) | 主視窗 (`ttk.Frame`)。包含四個區塊：ANSYS 檔案、SPECTRA 檔案、幾何設定、輸出設定。管理按鈕啟用/停用狀態序列（Upload ANSYS → Upload SPECTRA → Create file）。顯示統計標籤。Footer 含兩個 label：左 = `footer_status_var`（系統狀態），右 = `warn_strip_var`（橘色警告條，12 秒後自動消失）。`_post_warning(msg)` 觸發警告條；mapping 完成後若 out-of-grid > 5% 自動觸發。 |
 | `geometry_frame.py` | `form1` 幾何輸入區 | Source / Target / Side 三點各 3 個 `ttk.Entry`（共 9 欄）。「Update geometry」按鈕觸發重新計算。顯示計算後的正交基底向量 ê_X, ê_Y, ê_Z（唯讀標籤）。 |
 | `progress_dialog.py` | `UserForm1` | Modal `tk.Toplevel`，內含 `ttk.Progressbar`。由 `mapping_pipeline.py` 透過 callback 更新進度值。 |
 
@@ -121,9 +125,9 @@ tests      →  可引用所有層；絕不引用 gui
 
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
-| `ansys_reader.py` | `readAnsys.bas` | State-machine parser。節點區段：收集原始行至 list，解析完畢後一次用 numpy 向量化建立 `AnsysNodeStore`（取代逐行 dict insert）。Heat flux 區段：逐行解析（元素數量遠少於節點，無需特別優化）。Element 區段：僅計數，不儲存。 |
-| `spectra_reader.py` | `readSpectra.bas` | 跳過前 2 行 header。解析三欄（xmrad, ymrad, powerDensity [kW/mrad²]）。自動偵測 `total_column`。回傳 `list[SpectraNode]` 及 grid 維度 `(n_row, n_col)`。SPECTRA grid 通常 < 40,000 點，不需要特別優化。 |
-| `output_writer.py` | `writeAnsysHeatFluxElements()` | 使用批次 buffer（CHUNK=10,000 行）寫檔，取代逐行系統呼叫。**修正 VBA Bug #1**：輸出剛好 5 欄。套用 `total_power_ratio` 縮放。若 `HeatFluxResultStore` 可用則使用 `numpy.savetxt` 一次寫出。 |
+| `ansys_reader.py` | `readAnsys.bas` | State-machine parser。節點區段：收集原始行至 list，解析完畢後一次用 numpy 向量化建立 `AnsysNodeStore`。Heat flux 區段：逐行解析。Element 區段：僅計數，不儲存。**Log**：解析耗時、各 section 轉換（DEBUG）、flux=0 或 node=0（WARNING）、跳過的 hf 行含原因（WARNING）。 |
+| `spectra_reader.py` | `readSpectra.bas` | 跳過前 2 行 header。解析三欄（xmrad, ymrad, powerDensity [kW/mrad²]）。自動偵測 `total_column`。**Log**：解析耗時、grid 尺寸、峰值 PD；grid < 3×3 時 WARNING。 |
+| `output_writer.py` | `writeAnsysHeatFluxElements()` | **修正 VBA Bug #1**：輸出剛好 5 欄。套用 `total_power_ratio` 縮放。**Log**：輸出路徑、行數、耗時；目標檔已存在時 WARNING（覆蓋）。 |
 
 ---
 
@@ -164,7 +168,7 @@ tests      →  可引用所有層；絕不引用 gui
 
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
-| `mapping_pipeline.py` | `main.bas storeAnsysInterpolateCoordinateAndPower()` | 提供兩條執行路徑：`run_mapping(..., vectorized=True)`（預設，向量化，快速）及 `run_mapping(..., vectorized=False)`（逐元素，供 debug/驗證）。向量化路徑：形心計算 → `map_to_mrad_batch` → `find_elements_batch` → 批次插值 → 批次單位換算，全程 numpy array 操作。`progress_cb(current, total)` 在向量化路徑以 chunk 為單位回報（非逐元素）。 |
+| `mapping_pipeline.py` | `main.bas storeAnsysInterpolateCoordinateAndPower()` | 提供兩條執行路徑：`run_mapping(..., vectorized=True)`（預設，向量化，快速）及 `run_mapping(..., vectorized=False)`（逐元素，供 debug/驗證）。**Log**：開始條件（元素數、source 點）、完成耗時、out-of-grid 數量及百分比；out-of-grid > 5% 時 WARNING。 |
 
 ---
 
@@ -172,7 +176,8 @@ tests      →  可引用所有層；絕不引用 gui
 
 | 檔案 | 對應 VBA | 職責 |
 |------|----------|------|
-| `session_backup.py` | `backupModule.bas` | `save_backup() / load_backup()`。格式：`.backup.json`。 |
+| `app_logger.py` | ─（新增）| `setup_logging(log_path)` — 一次性初始化 rotating file handler，寫入 `heatflux.log`（5 MB × 3 份）。DEBUG 等級，完全靜默。由 `main.py` 在 Tk 啟動前呼叫。所有模組用 `logging.getLogger(__name__)` 取得 logger。 |
+| `session_backup.py` | `backupModule.bas` | `save_backup() / load_backup()`。格式：`.backup.json`。儲存/載入路徑記錄到 log。 |
 
 ---
 

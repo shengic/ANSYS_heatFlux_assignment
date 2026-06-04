@@ -14,6 +14,7 @@ _log = logging.getLogger(__name__)
 import numpy as np
 
 from heatflux.config.ansys_cache import (
+    ansys_cache_file_exists,
     delete_ansys_cache_entry_file,
     clear_all_ansys_parse_cache,
     delete_ansys_parse_cache,
@@ -27,9 +28,11 @@ from heatflux.config.spectra_cache import (
     clear_all_spectra_parse_cache,
     delete_spectra_cache_entry_file,
     delete_spectra_parse_cache,
+    has_valid_spectra_parse_cache,
     list_spectra_parse_cache_entries,
     load_spectra_parse_cache,
     save_spectra_parse_cache,
+    spectra_cache_file_exists,
 )
 from heatflux.gui.geometry_frame import GeometryFrame
 from heatflux.io.ansys_reader import AnsysParseResult, read_ansys_file
@@ -46,8 +49,8 @@ class MainWindow:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("SPECTRA -> ANSYS Heat Flux Node Assignment")
-        self.root.geometry("1000x900")
-        self.root.minsize(1080, 820)
+        self.root.geometry("1080x1040")
+        self.root.minsize(1080, 980)
 
         self.ansys_loaded = False
         self.spectra_loaded = False
@@ -61,6 +64,8 @@ class MainWindow:
 
         self.ansys_path_var = tk.StringVar()
         self.spectra_path_var = tk.StringVar()
+        self.ansys_filename_display_var = tk.StringVar(value="")
+        self.spectra_filename_display_var = tk.StringVar(value="")
         self.output_folder_var = tk.StringVar()
         self.output_filename_var = tk.StringVar(value="EPU66-27A power for ansys.inp")
         self.power_ratio_var = tk.StringVar(value="1.0")
@@ -91,6 +96,8 @@ class MainWindow:
         self._warn_after_id: str | None = None
         self.cache_browser_window: tk.Toplevel | None = None
         self.cache_tree: ttk.Treeview | None = None
+        self.spectra_cache_browser_window: tk.Toplevel | None = None
+        self.spectra_cache_tree: ttk.Treeview | None = None
         self.loaded_backup_path: Path | None = None
 
         self._build_layout()
@@ -115,7 +122,7 @@ class MainWindow:
         header_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(
             header_left,
-            text="By Albert Sheng, version 1.0",
+            text="By Albert Sheng, version 2.0",
             style="HeaderSub.TLabel",
         ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
@@ -131,8 +138,8 @@ class MainWindow:
 
         body = ttk.Frame(container, style="App.TFrame")
         body.grid(row=1, column=0, sticky="nsew", pady=(8, 6))
-        body.columnconfigure(0, weight=6)
-        body.columnconfigure(1, weight=5)
+        body.columnconfigure(0, weight=1, uniform="panels")
+        body.columnconfigure(1, weight=1, uniform="panels")
         body.rowconfigure(0, weight=1)
 
         left = ttk.Frame(body, style="App.TFrame")
@@ -238,23 +245,29 @@ class MainWindow:
         pair_pady = (2, 0)
 
         frame = self._create_card(parent)
-        ttk.Label(frame, text="ANSYS APDL INPUT FILE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Entry(frame, style="Card.TEntry", textvariable=self.ansys_path_var).grid(row=1, column=0, sticky="ew", padx=(0, 10))
-        self.upload_ansys_btn = ttk.Button(frame, text="Upload ANSYS file", width=19, style="Primary.TButton", command=self._on_upload_ansys)
-        self.upload_ansys_btn.grid(row=1, column=1, sticky="ew")
+        ttk.Label(frame, text="ANSYS APDL INPUT FILE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        ansys_path_box = ttk.Frame(frame, style="FlatCard.TFrame")
+        ansys_path_box.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self.ansys_path_entry = ttk.Entry(ansys_path_box, style="Card.TEntry", textvariable=self.ansys_path_var)
+        self.ansys_path_entry.pack(fill=tk.X)
+        ttk.Label(ansys_path_box, textvariable=self.ansys_filename_display_var, style="Body.TLabel").pack(anchor="w", pady=(2, 0))
+        self.browse_ansys_btn = ttk.Button(frame, text="Browse...", width=9, style="BoxSecondary.TButton", command=self._on_browse_ansys)
+        self.browse_ansys_btn.grid(row=1, column=1, sticky="new", padx=(0, 8))
+        self.upload_ansys_btn = ttk.Button(frame, text="Upload ANSYS file", style="Primary.TButton", command=self._on_upload_ansys)
+        self.upload_ansys_btn.grid(row=1, column=2, sticky="nw")
 
         parsing = ttk.Frame(frame, style="Inset.TFrame", padding=8)
-        parsing.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 6))
+        parsing.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 6))
         ttk.Label(parsing, textvariable=self.ansys_status_var, style="Body.TLabel", wraplength=760).grid(row=0, column=0, sticky="w")
         ttk.Label(parsing, textvariable=self.ansys_percent_var, style="BlueValue.TLabel").grid(row=0, column=1, sticky="e")
         self.ansys_progress = ttk.Progressbar(parsing, orient="horizontal", mode="determinate", maximum=100, style="Ans.Horizontal.TProgressbar")
         self.ansys_progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
         parsing.columnconfigure(0, weight=1)
 
-        ttk.Separator(frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 8))
+        ttk.Separator(frame, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 8))
 
         info_area = ttk.Frame(frame, style="FlatCard.TFrame")
-        info_area.grid(row=4, column=0, columnspan=2, sticky="ew", padx=(2, 0))
+        info_area.grid(row=4, column=0, columnspan=3, sticky="ew", padx=(2, 0))
 
         stats_left = ttk.Frame(info_area, style="FlatCard.TFrame")
         stats_left.grid(row=0, column=0, sticky="nw")
@@ -276,42 +289,58 @@ class MainWindow:
         info_area.columnconfigure(1, weight=0)
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=0)
+        frame.columnconfigure(2, weight=0)
 
     def _build_spectra_card(self, parent: ttk.Frame) -> None:
         pair_padx = (8, 0)
         pair_pady = (2, 0)
 
         frame = self._create_card(parent)
-        ttk.Label(frame, text="SPECTRA POWER DENSITY FILE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        ttk.Entry(frame, style="Card.TEntry", textvariable=self.spectra_path_var).grid(row=1, column=0, sticky="ew", padx=(0, 10))
-        self.upload_spectra_btn = ttk.Button(frame, text="Upload SPECTRA file", width=19, style="Primary.TButton", command=self._on_upload_spectra)
-        self.upload_spectra_btn.grid(row=1, column=1, sticky="ew")
+        ttk.Label(frame, text="SPECTRA POWER DENSITY FILE", style="CardTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        spectra_path_box = ttk.Frame(frame, style="FlatCard.TFrame")
+        spectra_path_box.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self.spectra_path_entry = ttk.Entry(spectra_path_box, style="Card.TEntry", textvariable=self.spectra_path_var)
+        self.spectra_path_entry.pack(fill=tk.X)
+        ttk.Label(spectra_path_box, textvariable=self.spectra_filename_display_var, style="Body.TLabel").pack(anchor="w", pady=(2, 0))
+        self.browse_spectra_btn = ttk.Button(frame, text="Browse...", width=9, style="BoxSecondary.TButton", command=self._on_browse_spectra)
+        self.browse_spectra_btn.grid(row=1, column=1, sticky="new", padx=(0, 8))
+        self.upload_spectra_btn = ttk.Button(frame, text="Upload SPECTRA file", style="Primary.TButton", command=self._on_upload_spectra)
+        self.upload_spectra_btn.grid(row=1, column=2, sticky="nw")
 
         parsing = ttk.Frame(frame, style="Inset.TFrame", padding=8)
-        parsing.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 6))
+        parsing.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 6))
         ttk.Label(parsing, textvariable=self.spectra_status_var, style="Body.TLabel", wraplength=760).grid(row=0, column=0, sticky="w")
         ttk.Label(parsing, textvariable=self.spectra_percent_var, style="OrangeValue.TLabel").grid(row=0, column=1, sticky="e")
         self.spectra_progress = ttk.Progressbar(parsing, orient="horizontal", mode="determinate", maximum=100, style="Spectra.Horizontal.TProgressbar")
         self.spectra_progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
         parsing.columnconfigure(0, weight=1)
 
-        ttk.Separator(frame, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=(6, 8))
+        ttk.Separator(frame, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 8))
 
-        ttk.Label(frame, text="Columns:", style="Body.TLabel").grid(row=4, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_cols_var, style="Value.TLabel").grid(row=4, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
-        ttk.Label(frame, text="Rows:", style="Body.TLabel").grid(row=5, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_rows_var, style="Value.TLabel").grid(row=5, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
-        ttk.Label(frame, text="X range (mrad):", style="Body.TLabel").grid(row=6, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_x_range_var, style="Mono.TLabel").grid(row=6, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
-        ttk.Label(frame, text="Y range (mrad):", style="Body.TLabel").grid(row=7, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_y_range_var, style="Mono.TLabel").grid(row=7, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
-        ttk.Label(frame, text="Peak power density:", style="Body.TLabel").grid(row=8, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_peak_var, style="OrangeValue.TLabel").grid(row=8, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
-        ttk.Label(frame, text="Total power:", style="Body.TLabel").grid(row=9, column=0, sticky="w", pady=pair_pady)
-        ttk.Label(frame, textvariable=self.spectra_total_power_var, style="OrangeValue.TLabel").grid(row=9, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        cache_row = ttk.Frame(frame, style="FlatCard.TFrame")
+        cache_row.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        ttk.Label(cache_row, textvariable=self.spectra_cache_var, style="Body.TLabel").grid(row=0, column=0, columnspan=3, sticky="e", pady=(0, 4))
+        ttk.Button(cache_row, text="Delete current", style="BoxGhost.TButton", command=self._on_delete_current_spectra_cache).grid(row=1, column=0, sticky="e")
+        ttk.Button(cache_row, text="Delete all", style="BoxGhost.TButton", command=self._on_clear_all_spectra_cache).grid(row=1, column=1, sticky="e", padx=(6, 0))
+        ttk.Button(cache_row, text="Browse...", style="BoxGhost.TButton", command=self._open_spectra_cache_browser).grid(row=1, column=2, sticky="e", padx=(6, 0))
+        cache_row.columnconfigure(0, weight=1)
+
+        ttk.Label(frame, text="Columns:", style="Body.TLabel").grid(row=5, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_cols_var, style="Value.TLabel").grid(row=5, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        ttk.Label(frame, text="Rows:", style="Body.TLabel").grid(row=6, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_rows_var, style="Value.TLabel").grid(row=6, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        ttk.Label(frame, text="X range (mrad):", style="Body.TLabel").grid(row=7, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_x_range_var, style="Mono.TLabel").grid(row=7, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        ttk.Label(frame, text="Y range (mrad):", style="Body.TLabel").grid(row=8, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_y_range_var, style="Mono.TLabel").grid(row=8, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        ttk.Label(frame, text="Peak power density:", style="Body.TLabel").grid(row=9, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_peak_var, style="OrangeValue.TLabel").grid(row=9, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
+        ttk.Label(frame, text="Total power:", style="Body.TLabel").grid(row=10, column=0, sticky="w", pady=pair_pady)
+        ttk.Label(frame, textvariable=self.spectra_total_power_var, style="OrangeValue.TLabel").grid(row=10, column=1, sticky="w", padx=pair_padx, pady=pair_pady)
 
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=0)
+        frame.columnconfigure(2, weight=0)
 
     def _build_output_card(self, parent: ttk.Frame) -> None:
         frame = self._create_card(parent)
@@ -382,6 +411,56 @@ class MainWindow:
         self.output_folder_var.trace_add("write", lambda *_: self._update_ready_state())
         self.output_filename_var.trace_add("write", lambda *_: self._update_ready_state())
         self.power_ratio_var.trace_add("write", lambda *_: self._update_ready_state())
+
+        self.ansys_path_var.trace_add("write", lambda *_: self._sync_path_display(
+            self.ansys_path_var, self.ansys_filename_display_var, self.ansys_path_entry))
+        self.spectra_path_var.trace_add("write", lambda *_: self._sync_path_display(
+            self.spectra_path_var, self.spectra_filename_display_var, self.spectra_path_entry))
+
+        self.ansys_path_var.trace_add("write", lambda *_: self._refresh_cache_hint(
+            self.ansys_path_var, self.ansys_cache_var, ansys_cache_file_exists))
+        self.spectra_path_var.trace_add("write", lambda *_: self._refresh_cache_hint(
+            self.spectra_path_var, self.spectra_cache_var, spectra_cache_file_exists))
+
+        self.ansys_path_entry.bind("<FocusOut>", lambda _e: self.ansys_path_entry.xview_moveto(1.0))
+        self.spectra_path_entry.bind("<FocusOut>", lambda _e: self.spectra_path_entry.xview_moveto(1.0))
+        self.ansys_path_entry.bind("<Map>", lambda _e: self.ansys_path_entry.xview_moveto(1.0))
+        self.spectra_path_entry.bind("<Map>", lambda _e: self.spectra_path_entry.xview_moveto(1.0))
+
+        self._sync_path_display(self.ansys_path_var, self.ansys_filename_display_var, self.ansys_path_entry)
+        self._sync_path_display(self.spectra_path_var, self.spectra_filename_display_var, self.spectra_path_entry)
+        self._refresh_cache_hint(self.ansys_path_var, self.ansys_cache_var, ansys_cache_file_exists)
+        self._refresh_cache_hint(self.spectra_path_var, self.spectra_cache_var, spectra_cache_file_exists)
+
+    def _sync_path_display(self, path_var: tk.StringVar, display_var: tk.StringVar, entry: ttk.Entry) -> None:
+        raw = path_var.get().strip()
+        if raw:
+            display_var.set(f"Selected: {Path(raw).name}")
+        else:
+            display_var.set("")
+        try:
+            self.root.after_idle(lambda: entry.xview_moveto(1.0))
+        except Exception:
+            pass
+
+    def _refresh_cache_hint(self, path_var: tk.StringVar, cache_var: tk.StringVar, exists_fn) -> None:
+        """Update the cache-source hint label based on whether a cache file exists for the current path.
+
+        Does not validate cache content. Called via path-var trace and at startup.
+        Upload/load flows overwrite this label with more authoritative states
+        ('checking...', 'parsed from file', 'loaded from cache') as they run.
+        """
+        raw = path_var.get().strip()
+        if not raw:
+            cache_var.set("Cache source: none")
+            return
+        try:
+            if exists_fn(Path(self._normalize_path_text(raw))):
+                cache_var.set("Cache source: cache available for this file")
+            else:
+                cache_var.set("Cache source: no cache for this file")
+        except Exception:
+            cache_var.set("Cache source: none")
 
     @staticmethod
     def _normalize_path_text(path_text: str) -> str:
@@ -454,6 +533,26 @@ class MainWindow:
             return
         self._load_spectra_for_path(Path(path))
 
+    def _on_browse_ansys(self) -> None:
+        _log.info("User action: browse ANSYS file")
+        path = filedialog.askopenfilename(
+            initialdir=self._dialog_initial_dir(self.ansys_path_var.get()),
+            filetypes=[("ANSYS APDL", "*.dat"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        self._load_ansys_for_path(Path(path), interactive_cache_prompt=True, async_parse=True)
+
+    def _on_browse_spectra(self) -> None:
+        _log.info("User action: browse SPECTRA file")
+        path = filedialog.askopenfilename(
+            initialdir=self._dialog_initial_dir(self.spectra_path_var.get(), self.ansys_path_var.get()),
+            filetypes=[("SPECTRA", "*.dta *.data *.dta2"), ("All files", "*.*")],
+        )
+        if not path:
+            return
+        self._load_spectra_for_path(Path(path))
+
     def _on_browse_output_folder(self) -> None:
         path = filedialog.askdirectory(initialdir=self._dialog_initial_dir(self.output_folder_var.get(), self.ansys_path_var.get()))
         if path:
@@ -498,8 +597,10 @@ class MainWindow:
             if not self.output_folder_var.get().strip():
                 self.output_folder_var.set(self._normalize_path_text(str(source_path.parent)))
             self.upload_ansys_btn.configure(state=tk.NORMAL)
+            self.browse_ansys_btn.configure(state=tk.NORMAL)
             if self._can_start_spectra():
                 self.upload_spectra_btn.configure(state=tk.NORMAL)
+                self.browse_spectra_btn.configure(state=tk.NORMAL)
             self._save_session_backup()
             self._update_ready_state()
             return True
@@ -576,16 +677,57 @@ class MainWindow:
             self.output_folder_var.set(self._normalize_path_text(str(source_path.parent)))
         self._is_loading_ansys = False
         self.upload_ansys_btn.configure(state=tk.NORMAL)
+        self.browse_ansys_btn.configure(state=tk.NORMAL)
         if self._can_start_spectra():
             self.upload_spectra_btn.configure(state=tk.NORMAL)
+            self.browse_spectra_btn.configure(state=tk.NORMAL)
         self._save_ansys_cache_async(source_path, result)
         self._save_session_backup()
         self._update_ready_state()
 
-    def _load_spectra_for_path(self, spectra_path: Path) -> bool:
+    def _load_spectra_for_path(self, spectra_path: Path, interactive_cache_prompt: bool = True) -> bool:
         spectra_path = Path(self._normalize_path_text(str(spectra_path))).resolve()
         self._set_path_var(self.spectra_path_var, spectra_path)
         self._set_state_spectra_loading()
+        self.spectra_cache_var.set("Cache source: checking...")
+
+        cached_result: SpectraParseResult | None = None
+        try:
+            cached_result = load_spectra_parse_cache(spectra_path)
+        except Exception:
+            cached_result = None
+
+        use_cache = False
+        if cached_result is not None:
+            if interactive_cache_prompt:
+                use_cache = messagebox.askyesno(
+                    "Reuse SPECTRA cache",
+                    "A cached parsed SPECTRA grid exists for this file.\n"
+                    "Do you want to reuse it for faster loading?",
+                )
+            else:
+                use_cache = True
+
+        if use_cache and cached_result is not None:
+            self.spectra_result = cached_result
+            self.spectra_loaded = True
+            self._is_loading_spectra = False
+            self._set_spectra_stats_from_result(self.spectra_result)
+            self.spectra_cache_var.set("Cache source: loaded from cache")
+            self._update_spectra_progress(
+                100,
+                f"Loaded cache: grid {self.spectra_result.n_col}x{self.spectra_result.n_row}, "
+                f"peak={self.spectra_result.peak_power_density_kw_mrad2:.4g} kW/mrad^2",
+            )
+            self.total_power_spectra_var.set(f"{self.spectra_result.total_power_kw:.3f} kW")
+            self.upload_spectra_btn.configure(state=tk.NORMAL)
+            self.browse_spectra_btn.configure(state=tk.NORMAL)
+            self.upload_ansys_btn.configure(state=tk.NORMAL)
+            self.browse_ansys_btn.configure(state=tk.NORMAL)
+            self._save_session_backup()
+            self._update_ready_state()
+            return True
+
         self._update_spectra_progress(0, "Reading SPECTRA file...")
         try:
             self.spectra_result = read_spectra_file(spectra_path, progress_cb=self._on_spectra_parse_progress)
@@ -595,11 +737,13 @@ class MainWindow:
             self.spectra_result = None
             self._set_spectra_stats_from_result(None)
             self._update_spectra_progress(0, "SPECTRA parse failed")
+            self.spectra_cache_var.set("Cache source: none")
             messagebox.showerror("SPECTRA Parse Error", str(exc))
             return False
 
         self.spectra_loaded = True
         self._set_spectra_stats_from_result(self.spectra_result)
+        self.spectra_cache_var.set("Cache source: parsed from file")
         self._update_spectra_progress(
             100,
             f"Parsed grid {self.spectra_result.n_col}x{self.spectra_result.n_row}, "
@@ -608,7 +752,10 @@ class MainWindow:
         self.total_power_spectra_var.set(f"{self.spectra_result.total_power_kw:.3f} kW")
         self._is_loading_spectra = False
         self.upload_spectra_btn.configure(state=tk.NORMAL)
+        self.browse_spectra_btn.configure(state=tk.NORMAL)
         self.upload_ansys_btn.configure(state=tk.NORMAL)
+        self.browse_ansys_btn.configure(state=tk.NORMAL)
+        self._save_spectra_cache_async(spectra_path, self.spectra_result)
         self._save_session_backup()
         self._update_ready_state()
         return True
@@ -651,7 +798,10 @@ class MainWindow:
         self.view_btn.configure(state=tk.DISABLED)
         self.view_btn.configure(style="Disabled.TButton")
         self.upload_ansys_btn.configure(state=tk.NORMAL)
-        self.upload_spectra_btn.configure(state=tk.NORMAL if self.ansys_loaded else tk.DISABLED)
+        self.browse_ansys_btn.configure(state=tk.NORMAL)
+        spectra_state = tk.NORMAL if self.ansys_loaded else tk.DISABLED
+        self.upload_spectra_btn.configure(state=spectra_state)
+        self.browse_spectra_btn.configure(state=spectra_state)
         self._set_edit_controls_enabled(True)
         self.footer_status_var.set("SYSTEM OPERATIONAL")
 
@@ -660,7 +810,9 @@ class MainWindow:
         self._is_loading_spectra = False
         self._is_mapping = False
         self.upload_ansys_btn.configure(state=tk.DISABLED)
+        self.browse_ansys_btn.configure(state=tk.DISABLED)
         self.upload_spectra_btn.configure(state=tk.DISABLED)
+        self.browse_spectra_btn.configure(state=tk.DISABLED)
         self.create_btn.configure(state=tk.DISABLED)
         self.footer_status_var.set("PARSING ANSYS MODEL")
 
@@ -669,7 +821,9 @@ class MainWindow:
         self._is_loading_spectra = True
         self._is_mapping = False
         self.upload_spectra_btn.configure(state=tk.DISABLED)
+        self.browse_spectra_btn.configure(state=tk.DISABLED)
         self.upload_ansys_btn.configure(state=tk.DISABLED)
+        self.browse_ansys_btn.configure(state=tk.DISABLED)
         self.create_btn.configure(state=tk.DISABLED)
         self.footer_status_var.set("PARSING SPECTRA GRID")
 
@@ -678,7 +832,9 @@ class MainWindow:
         self._is_loading_spectra = False
         self._is_mapping = True
         self.upload_spectra_btn.configure(state=tk.DISABLED)
+        self.browse_spectra_btn.configure(state=tk.DISABLED)
         self.upload_ansys_btn.configure(state=tk.DISABLED)
+        self.browse_ansys_btn.configure(state=tk.DISABLED)
         self.create_btn.configure(state=tk.DISABLED)
         self.view_btn.configure(state=tk.DISABLED)
         self._set_edit_controls_enabled(False)
@@ -691,7 +847,9 @@ class MainWindow:
         self._is_loading_spectra = False
         self._is_mapping = False
         self.upload_spectra_btn.configure(state=tk.NORMAL)
+        self.browse_spectra_btn.configure(state=tk.NORMAL)
         self.upload_ansys_btn.configure(state=tk.NORMAL)
+        self.browse_ansys_btn.configure(state=tk.NORMAL)
         self.view_btn.configure(state=tk.NORMAL if self.last_output_path is not None else tk.DISABLED)
         self.view_btn.configure(style="Secondary.TButton" if self.last_output_path is not None else "Disabled.TButton")
         self._set_edit_controls_enabled(True)
@@ -1217,6 +1375,7 @@ class MainWindow:
             messagebox.showinfo("Cache", "SPECTRA cache deleted for current file.")
         else:
             messagebox.showinfo("Cache", "No cache file was deleted.")
+        self._refresh_spectra_cache_browser()
 
     def _on_clear_all_spectra_cache(self) -> None:
         confirmed = messagebox.askyesno("Clear all cache", "Delete all SPECTRA cache entries?")
@@ -1225,6 +1384,80 @@ class MainWindow:
         deleted = clear_all_spectra_parse_cache()
         self.spectra_cache_var.set("Cache source: all cache cleared")
         messagebox.showinfo("Cache", f"Deleted {deleted} cache file(s).")
+        self._refresh_spectra_cache_browser()
+
+    def _open_spectra_cache_browser(self) -> None:
+        if self.spectra_cache_browser_window is not None and self.spectra_cache_browser_window.winfo_exists():
+            self.spectra_cache_browser_window.lift()
+            self._refresh_spectra_cache_browser()
+            return
+
+        w = tk.Toplevel(self.root)
+        w.title("SPECTRA Cache Browser")
+        w.geometry("900x320")
+        self.spectra_cache_browser_window = w
+
+        cols = ("source", "valid", "exists", "size_mb", "cache_file")
+        tree = ttk.Treeview(w, columns=cols, show="headings", height=10)
+        tree.heading("source", text="Source Path")
+        tree.heading("valid", text="Valid")
+        tree.heading("exists", text="Source Exists")
+        tree.heading("size_mb", text="Size (MB)")
+        tree.heading("cache_file", text="Cache File")
+        tree.column("source", width=360, anchor="w")
+        tree.column("valid", width=60, anchor="center")
+        tree.column("exists", width=90, anchor="center")
+        tree.column("size_mb", width=80, anchor="e")
+        tree.column("cache_file", width=260, anchor="w")
+        tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.spectra_cache_tree = tree
+
+        actions = ttk.Frame(w)
+        actions.pack(fill=tk.X, padx=8, pady=(0, 8))
+        ttk.Button(actions, text="Refresh", command=self._refresh_spectra_cache_browser).pack(side=tk.LEFT)
+        ttk.Button(actions, text="Delete Selected", command=self._delete_selected_spectra_cache_entry).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Delete All", command=self._on_clear_all_spectra_cache).pack(side=tk.LEFT, padx=(8, 0))
+
+        self._refresh_spectra_cache_browser()
+
+    def _refresh_spectra_cache_browser(self) -> None:
+        if self.spectra_cache_tree is None or not self.spectra_cache_tree.winfo_exists():
+            return
+        for item in self.spectra_cache_tree.get_children():
+            self.spectra_cache_tree.delete(item)
+
+        entries = list_spectra_parse_cache_entries()
+        for entry in entries:
+            size_mb = entry.source_size / (1024.0 * 1024.0)
+            self.spectra_cache_tree.insert(
+                "",
+                tk.END,
+                iid=str(entry.cache_path),
+                values=(
+                    str(entry.source_path),
+                    "Y" if entry.is_valid else "N",
+                    "Y" if entry.source_exists else "N",
+                    f"{size_mb:.2f}",
+                    str(entry.cache_path.name),
+                ),
+            )
+
+    def _delete_selected_spectra_cache_entry(self) -> None:
+        if self.spectra_cache_tree is None or not self.spectra_cache_tree.winfo_exists():
+            return
+        selection = self.spectra_cache_tree.selection()
+        if not selection:
+            messagebox.showinfo("Cache", "No cache entry selected.")
+            return
+        if not messagebox.askyesno("Delete cache entry", "Delete selected cache entry?"):
+            return
+        deleted = 0
+        for iid in selection:
+            if delete_spectra_cache_entry_file(Path(iid)):
+                deleted += 1
+        messagebox.showinfo("Cache", f"Deleted {deleted} cache file(s).")
+        self._refresh_spectra_cache_browser()
+
     def _open_cache_browser(self) -> None:
         if self.cache_browser_window is not None and self.cache_browser_window.winfo_exists():
             self.cache_browser_window.lift()
