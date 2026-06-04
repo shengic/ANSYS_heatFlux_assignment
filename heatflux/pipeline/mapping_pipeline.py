@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Callable
 
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 from heatflux.math_core.coordinate_transform import map_to_mrad_batch
 from heatflux.math_core.geometry import SourceGeometry
@@ -140,8 +144,13 @@ def run_mapping(
     source = np.asarray(source, dtype=np.float64)
     if source.shape != (3,):
         raise ValueError("source must be shape (3,)")
+    _log.info(
+        "Starting mapping: %d hf elements, %d spectra elements, source=%s, vectorized=%s",
+        len(hf_elements), len(spectra_elements), source.tolist(), vectorized,
+    )
+    t0 = time.monotonic()
     if vectorized:
-        return _run_mapping_vectorized(
+        result = _run_mapping_vectorized(
             hf_elements=hf_elements,
             spectra_elements=spectra_elements,
             grid=grid,
@@ -149,11 +158,27 @@ def run_mapping(
             geometry=geometry,
             progress_cb=progress_cb,
         )
-    return _run_mapping_sequential(
-        hf_elements=hf_elements,
-        spectra_elements=spectra_elements,
-        grid=grid,
-        source=source,
-        geometry=geometry,
-        progress_cb=progress_cb,
+    else:
+        result = _run_mapping_sequential(
+            hf_elements=hf_elements,
+            spectra_elements=spectra_elements,
+            grid=grid,
+            source=source,
+            geometry=geometry,
+            progress_cb=progress_cb,
+        )
+    elapsed = time.monotonic() - t0
+    total = len(result)
+    out_of_grid = sum(1 for e in result if float(e.metadata.get("in_grid", 0.0)) < 0.5)
+    total_power_w = sum(e.total_power_w for e in result)
+    _log.info(
+        "Mapping complete in %.2fs: %d elements, %d out-of-grid (%.1f%%), total power=%.4g W",
+        elapsed, total, out_of_grid, 100.0 * out_of_grid / max(1, total), total_power_w,
     )
+    if total > 0 and out_of_grid / total > 0.05:
+        _log.warning(
+            "%.1f%% of heat flux elements (%d/%d) are outside the SPECTRA grid — "
+            "check source geometry and SPECTRA angular coverage",
+            100.0 * out_of_grid / total, out_of_grid, total,
+        )
+    return result

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 from heatflux.model.ansys_node import AnsysNode
 from heatflux.model.ansys_heatflux_element import AnsysHeatFluxElement
@@ -79,6 +83,9 @@ def parse_ansys_heatflux_line(string_line: str, nodes_by_id: dict[int, AnsysNode
 def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = None) -> AnsysParseResult:
     """Parse ANSYS APDL *.dat into node store and heat flux element list."""
     file_path = Path(path)
+    file_size_mb = file_path.stat().st_size / 1_048_576
+    _log.info("Parsing ANSYS file: %s (%.1f MB)", file_path, file_size_mb)
+    t0 = time.monotonic()
     lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
     total_lines = max(len(lines), 1)
 
@@ -118,12 +125,15 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
         )
 
         if "nodes for the whole assembly" in lower:
+            _log.debug("Line %d: entering node section", line_no)
             section = "node"
             continue
         if "/com" in lower and "elements for" in lower:
+            _log.debug("Line %d: entering element section", line_no)
             section = "element"
             continue
         if "create \"heat flux\"" in lower:
+            _log.debug("Line %d: entering heat flux section", line_no)
             section = "heat flux"
             continue
 
@@ -138,6 +148,7 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
             try:
                 node = parse_ansys_node_line(line)
             except ValueError:
+                _log.debug("Skipped node line %d: %.80r", line_no, line)
                 continue
             nodes_by_id[node.node_id] = node
         elif section == "element":
@@ -149,7 +160,8 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
         elif section == "heat flux":
             try:
                 element = parse_ansys_heatflux_line(line, nodes_by_id)
-            except ValueError:
+            except ValueError as exc:
+                _log.warning("Skipped heat flux line %d (%s): %.80r", line_no, exc, line)
                 continue
             heatflux_elements.append(element)
             flux_count += 1
@@ -157,13 +169,27 @@ def read_ansys_file(path: str | Path, progress_cb: ProgressCallback | None = Non
     node_ids = np.array(sorted(nodes_by_id.keys()), dtype=np.int32)
     xyz = np.array([[nodes_by_id[node_id].x, nodes_by_id[node_id].y, nodes_by_id[node_id].z] for node_id in node_ids], dtype=np.float64)
     node_store = AnsysNodeStore(node_ids=node_ids, xyz=xyz)
+    elapsed = time.monotonic() - t0
+    n_nodes = len(nodes_by_id)
+    n_flux = len(heatflux_elements)
+    if n_flux == 0:
+        _log.warning(
+            "ANSYS parse found 0 heat flux elements in %s — check that the file contains a Heat Flux section",
+            file_path.name,
+        )
+    if n_nodes == 0:
+        _log.warning("ANSYS parse found 0 nodes in %s", file_path.name)
+    _log.info(
+        "ANSYS parse complete in %.2fs: nodes=%d elements=%d flux=%d",
+        elapsed, n_nodes, total_elements, n_flux,
+    )
     _emit_progress(
         progress_cb,
         total_lines,
         total_lines,
         (
             "ANSYS parse complete "
-            f"| nodes={len(nodes_by_id):,} elements={total_elements:,} flux={len(heatflux_elements):,}"
+            f"| nodes={n_nodes:,} elements={total_elements:,} flux={n_flux:,}"
         ),
     )
     return AnsysParseResult(node_store=node_store, heatflux_elements=heatflux_elements, total_elements=total_elements)

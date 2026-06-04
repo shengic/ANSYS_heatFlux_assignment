@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 BACKUP_DIR = Path("session_backups")
@@ -42,6 +45,7 @@ def save_session_backup(payload: dict[str, Any], path: Path | None = None) -> Pa
     data["timestamp"] = now.isoformat(timespec="seconds")
     target = path if path is not None else _next_backup_path(_derive_prefix_from_payload(data), now)
     target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    _log.info("Session backup saved: %s", target)
     return target
 
 
@@ -56,4 +60,5 @@ def load_session_backup(path: Path | None = None) -> dict[str, Any] | None:
     target = path if path is not None else _latest_backup_path()
     if target is None or not target.exists():
         return None
+    _log.info("Loading session backup: %s", target)
     return json.loads(target.read_text(encoding="utf-8"))

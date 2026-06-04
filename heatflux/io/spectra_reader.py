@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
+
+_log = logging.getLogger(__name__)
 
 from heatflux.math_core.bilinear_interpolation import solve_coefficients
 from heatflux.math_core.spatial_search import SpectraGrid
@@ -110,6 +114,8 @@ def _build_spectra_elements(
 def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = None) -> SpectraParseResult:
     """Parse SPECTRA grid file and build interpolation elements."""
     file_path = Path(path)
+    _log.info("Parsing SPECTRA file: %s", file_path.name)
+    t0 = time.monotonic()
     lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
     total_lines = len(lines)
     if total_lines == 0:
@@ -194,6 +200,15 @@ def read_spectra_file(path: str | Path, progress_cb: ProgressCallback | None = N
         y_max=y_max,
     )
     peak = max(node.power_density for node in nodes)
+    if n_row < 3 or n_col < 3:
+        _log.warning(
+            "SPECTRA grid is very small (%dx%d) — interpolation may be inaccurate",
+            n_col, n_row,
+        )
+    _log.info(
+        "SPECTRA parse complete in %.2fs: grid=%dx%d peak=%.4g kW/mrad^2 total=%.4g kW",
+        time.monotonic() - t0, n_col, n_row, peak, total_power_kw,
+    )
     _emit_progress(progress_cb, progress_total, progress_total, "SPECTRA parse complete")
     return SpectraParseResult(
         nodes=nodes,

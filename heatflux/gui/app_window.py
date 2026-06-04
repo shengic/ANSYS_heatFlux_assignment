@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 import re
@@ -7,6 +8,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+
+_log = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -20,6 +23,14 @@ from heatflux.config.ansys_cache import (
     save_ansys_parse_cache,
 )
 from heatflux.config.session_backup import load_session_backup, save_session_backup
+from heatflux.config.spectra_cache import (
+    clear_all_spectra_parse_cache,
+    delete_spectra_cache_entry_file,
+    delete_spectra_parse_cache,
+    list_spectra_parse_cache_entries,
+    load_spectra_parse_cache,
+    save_spectra_parse_cache,
+)
 from heatflux.gui.geometry_frame import GeometryFrame
 from heatflux.io.ansys_reader import AnsysParseResult, read_ansys_file
 from heatflux.io.output_writer import write_output_from_elements
@@ -57,6 +68,7 @@ class MainWindow:
         self.ansys_status_var = tk.StringVar(value="No file loaded")
         self.ansys_percent_var = tk.StringVar(value="0%")
         self.ansys_cache_var = tk.StringVar(value="Cache source: none")
+        self.spectra_cache_var = tk.StringVar(value="Cache source: none")
         self.ansys_total_nodes_var = tk.StringVar(value="0")
         self.ansys_total_elements_var = tk.StringVar(value="0")
         self.ansys_flux_elements_var = tk.StringVar(value="0")
@@ -75,6 +87,8 @@ class MainWindow:
         self.total_power_out_var = tk.StringVar(value="-")
         self.total_power_spectra_var = tk.StringVar(value="-")
         self.footer_status_var = tk.StringVar(value="SYSTEM OPERATIONAL")
+        self.warn_strip_var = tk.StringVar(value="")
+        self._warn_after_id: str | None = None
         self.cache_browser_window: tk.Toplevel | None = None
         self.cache_tree: ttk.Treeview | None = None
         self.loaded_backup_path: Path | None = None
@@ -109,6 +123,11 @@ class MainWindow:
             text="SPECTRA -> ANSYS Heat Flux Node Assignment",
             style="HeaderTitle.TLabel",
         ).pack(anchor="w")
+
+        footer = ttk.Frame(container, style="Header.TFrame", padding=(14, 4))
+        footer.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        ttk.Label(footer, textvariable=self.footer_status_var, style="FooterAccent.TLabel").pack(side=tk.LEFT)
+        ttk.Label(footer, textvariable=self.warn_strip_var, style="FooterWarn.TLabel").pack(side=tk.RIGHT, padx=(8, 0))
 
         body = ttk.Frame(container, style="App.TFrame")
         body.grid(row=1, column=0, sticky="nsew", pady=(8, 6))
@@ -179,6 +198,7 @@ class MainWindow:
         style.configure("OrangeValue.TLabel", background="#f3f3f5", foreground="#ff6b35", font=(mono_font, 10, "bold"))
         style.configure("Footer.TLabel", background="#d9d9db", foreground="#3a3c41", font=(base_font, 9, "normal"))
         style.configure("FooterAccent.TLabel", background="#d9d9db", foreground="#00aee0", font=(base_font, 10, "bold"))
+        style.configure("FooterWarn.TLabel", background="#d9d9db", foreground="#cc5500", font=(base_font, 9, "normal"))
 
         style.configure("Card.TEntry", fieldbackground="#ececef", borderwidth=1, relief=tk.SOLID, padding=6, font=(mono_font, 10, "normal"))
 
@@ -390,6 +410,7 @@ class MainWindow:
         return str(Path.cwd())
 
     def _on_upload_ansys(self) -> None:
+        _log.info("User action: upload ANSYS file")
         typed_path = self._normalize_path_text(self.ansys_path_var.get())
         if typed_path:
             source_path = Path(typed_path)
@@ -411,6 +432,20 @@ class MainWindow:
         self._load_ansys_for_path(Path(path), interactive_cache_prompt=True, async_parse=True)
 
     def _on_upload_spectra(self) -> None:
+        _log.info("User action: upload SPECTRA file")
+        typed_path = self._normalize_path_text(self.spectra_path_var.get())
+        if typed_path:
+            source_path = Path(typed_path)
+            if not source_path.exists():
+                messagebox.showerror("SPECTRA file not found", f"Path does not exist:\n{source_path}")
+                return
+            allowed = (".dta", ".data", ".dta2")
+            if source_path.suffix.lower() not in allowed:
+                messagebox.showerror("Invalid SPECTRA file", "SPECTRA input must be a .dta, .data, or .dta2 file.")
+                return
+            self._load_spectra_for_path(source_path)
+            return
+
         path = filedialog.askopenfilename(
             initialdir=str(Path.cwd()),
             filetypes=[("SPECTRA", "*.dta *.data *.dta2"), ("All files", "*.*")],
@@ -675,6 +710,18 @@ class MainWindow:
             return
         self.footer_status_var.set("SYSTEM OPERATIONAL")
 
+    def _post_warning(self, msg: str, duration_ms: int = 12000) -> None:
+        """Show a non-modal warning in the footer strip; auto-clears after duration_ms."""
+        if self._warn_after_id is not None:
+            self.root.after_cancel(self._warn_after_id)
+        self.warn_strip_var.set(msg)
+        _log.warning("UI warning posted: %s", msg)
+        self._warn_after_id = self.root.after(duration_ms, self._clear_warning)
+
+    def _clear_warning(self) -> None:
+        self.warn_strip_var.set("")
+        self._warn_after_id = None
+
     def _save_ansys_cache_async(self, source_path: Path, result: AnsysParseResult) -> None:
         self.footer_status_var.set("SAVING ANSYS CACHE")
 
@@ -696,6 +743,27 @@ class MainWindow:
 
         threading.Thread(target=worker, daemon=True).start()
 
+
+    def _save_spectra_cache_async(self, source_path: Path, result: SpectraParseResult) -> None:
+        self.footer_status_var.set("SAVING SPECTRA CACHE")
+
+        def worker() -> None:
+            ok = True
+            try:
+                save_spectra_parse_cache(source_path, result)
+            except Exception:
+                ok = False
+
+            def finalize() -> None:
+                if ok:
+                    self.spectra_cache_var.set("Cache source: parsed from file (cache saved)")
+                else:
+                    self.spectra_cache_var.set("Cache source: parsed from file (cache save failed)")
+                self._sync_footer_state()
+
+            self.root.after(0, finalize)
+
+        threading.Thread(target=worker, daemon=True).start()
     def _set_edit_controls_enabled(self, enabled: bool) -> None:
         state = tk.NORMAL if enabled else tk.DISABLED
         readonly_state = "normal" if enabled else "disabled"
@@ -722,7 +790,7 @@ class MainWindow:
     def _on_update_geometry(self) -> None:
         self._update_ready_state()
         if self.geometry_valid:
-            messagebox.showinfo("Geometry", "Geometry basis is valid.")
+            messagebox.showinfo("Geometry", "The geometry is updated.")
         else:
             messagebox.showerror("Geometry", "Invalid geometry. Check Source/Target/Horizontal points.")
 
@@ -752,6 +820,9 @@ class MainWindow:
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / output_name
 
+        _log.info(
+            "User action: start mapping — output=%s ratio=%.4g", output_path, total_power_ratio
+        )
         self._set_state_mapping()
         try:
             mapped = run_mapping(
@@ -774,6 +845,15 @@ class MainWindow:
             self.mapped_elements_var.set(str(mapped_count))
             self.out_of_grid_var.set(str(out_of_grid_count))
             self.total_power_out_var.set(f"{total_power_out_kw:.3f} kW")
+            _log.info(
+                "Mapping UI complete: %d elements, %d out-of-grid, total power out=%.4g kW",
+                len(mapped), out_of_grid_count, total_power_out_kw,
+            )
+            if len(mapped) > 0 and out_of_grid_count / len(mapped) > 0.05:
+                self._post_warning(
+                    f"WARNING: {out_of_grid_count}/{len(mapped)} elements outside SPECTRA grid"
+                    f" ({100.0 * out_of_grid_count / len(mapped):.1f}%) — see heatflux.log"
+                )
             self._save_session_backup()
             messagebox.showinfo(
                 "Completed",
@@ -783,6 +863,7 @@ class MainWindow:
                 f"Total power out: {total_power_out_kw:.3f} kW",
             )
         except Exception as exc:
+            _log.error("Mapping failed: %s", exc, exc_info=True)
             messagebox.showerror("Mapping Error", str(exc))
         finally:
             self._set_state_done()
@@ -1085,6 +1166,12 @@ class MainWindow:
         path = Path(p)
         return path if path.exists() else None
 
+    def _get_current_spectra_path(self) -> Path | None:
+        p = self._normalize_path_text(self.spectra_path_var.get().strip())
+        if not p:
+            return None
+        path = Path(p)
+        return path if path.exists() else None
     def _on_delete_current_ansys_cache(self) -> None:
         source_path = self._get_current_ansys_path()
         if source_path is None:
@@ -1112,6 +1199,32 @@ class MainWindow:
         messagebox.showinfo("Cache", f"Deleted {deleted} cache file(s).")
         self._refresh_cache_browser()
 
+
+    def _on_delete_current_spectra_cache(self) -> None:
+        source_path = self._get_current_spectra_path()
+        if source_path is None:
+            messagebox.showinfo("Cache", "No valid SPECTRA file path is set.")
+            return
+        if not has_valid_spectra_parse_cache(source_path):
+            messagebox.showinfo("Cache", "No valid cache found for the current SPECTRA file.")
+            return
+        confirmed = messagebox.askyesno("Delete cache", "Delete cached parsed model for this SPECTRA file?")
+        if not confirmed:
+            return
+        deleted = delete_spectra_parse_cache(source_path)
+        if deleted:
+            self.spectra_cache_var.set("Cache source: cache deleted for current file")
+            messagebox.showinfo("Cache", "SPECTRA cache deleted for current file.")
+        else:
+            messagebox.showinfo("Cache", "No cache file was deleted.")
+
+    def _on_clear_all_spectra_cache(self) -> None:
+        confirmed = messagebox.askyesno("Clear all cache", "Delete all SPECTRA cache entries?")
+        if not confirmed:
+            return
+        deleted = clear_all_spectra_parse_cache()
+        self.spectra_cache_var.set("Cache source: all cache cleared")
+        messagebox.showinfo("Cache", f"Deleted {deleted} cache file(s).")
     def _open_cache_browser(self) -> None:
         if self.cache_browser_window is not None and self.cache_browser_window.winfo_exists():
             self.cache_browser_window.lift()
@@ -1195,3 +1308,8 @@ class MainWindow:
             "Sample validation complete",
             f"Status: {status}\nReport: {result.report_path}\nOutput: {result.generated_output_path}",
         )
+
+
+
+
+
