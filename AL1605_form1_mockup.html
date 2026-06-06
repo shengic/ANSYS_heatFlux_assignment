@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AL-1605-0740 form1 — VBA UserForm Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #c0c0c0;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    min-height: 100vh;
+  }
+
+  /* ── title bar ── */
+  .title-bar {
+    width: 680px;
+    background: linear-gradient(to right, #000080, #1084d0);
+    color: white;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 4px 4px 0 0;
+  }
+  .title-bar-btns { display: flex; gap: 2px; }
+  .title-btn {
+    width: 16px; height: 14px;
+    background: #c0c0c0;
+    border: 1px solid #888;
+    font-size: 9px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── main form ── */
+  .form-body {
+    width: 680px;
+    background: #f0f0f0;
+    border: 2px solid #888;
+    border-top: none;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* ── frames ── */
+  .frame {
+    border: 1px solid #888;
+    background: #f0f0f0;
+    position: relative;
+    padding: 14px 8px 8px 8px;
+    border-radius: 2px;
+  }
+  .frame-legend {
+    position: absolute;
+    top: -8px; left: 8px;
+    background: #f0f0f0;
+    padding: 0 4px;
+    font-weight: bold;
+    color: #000080;
+    font-size: 11px;
+  }
+
+  /* ── rows inside frames ── */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .row:last-child { margin-bottom: 0; }
+
+  /* ── labels ── */
+  .lbl {
+    color: #000;
+    white-space: nowrap;
+    min-width: 90px;
+  }
+  .lbl-val {
+    color: #000080;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+  .lbl-result {
+    color: #800000;
+    white-space: nowrap;
+    min-width: 160px;
+  }
+  .lbl-vector {
+    color: #006400;
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* ── textboxes ── */
+  input[type=text] {
+    border: 1px inset #999;
+    background: white;
+    padding: 1px 3px;
+    font-size: 11px;
+    font-family: inherit;
+    height: 20px;
+  }
+  input.wide  { width: 320px; }
+  input.med   { width: 160px; }
+  input.small { width: 70px; }
+  input.tiny  { width: 55px; }
+  input.xsmall{ width: 45px; }
+  input[readonly] { background: #e8e8e8; color: #444; }
+
+  /* ── buttons ── */
+  button {
+    border: 2px outset #c0c0c0;
+    background: #d4d0c8;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    height: 22px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  button:active { border-style: inset; }
+  button.primary { background: #dce8f8; font-weight: bold; }
+  button.disabled { color: #888; background: #c8c8c8; cursor: default; }
+  button.exit-btn { background: #f8d8d8; }
+
+  /* ── progress bar ── */
+  .progress-wrap {
+    display: flex; align-items: center; gap: 6px; flex: 1;
+  }
+  .progress-outer {
+    width: 160px; height: 14px;
+    border: 1px inset #999;
+    background: white;
+    position: relative;
+  }
+  .progress-inner {
+    width: 0%;
+    height: 100%;
+    background: #000080;
+  }
+  .progress-label {
+    font-size: 10px; color: #444; min-width: 60px;
+  }
+
+  /* ── geometry grid ── */
+  .geo-grid {
+    display: grid;
+    grid-template-columns: 80px 55px 55px 55px 20px 80px 55px 55px 55px;
+    gap: 4px;
+    align-items: center;
+  }
+  .geo-header {
+    font-weight: bold; color: #000080; text-align: center; font-size: 10px;
+  }
+  .geo-lbl { font-size: 11px; }
+
+  /* ── spectra stats ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+  }
+  .stat-row { display: flex; align-items: center; gap: 6px; }
+  .stat-key { min-width: 80px; }
+  .stat-val { color: #800000; font-weight: bold; min-width: 100px; }
+
+  /* ── separator ── */
+  .sep { border: none; border-top: 1px solid #aaa; margin: 2px 0; }
+
+  /* ── annotation ── */
+  .note {
+    font-size: 9px; color: #666; font-style: italic;
+    margin-top: 2px; padding-left: 4px;
+  }
+
+  /* ── page title ── */
+  h1 {
+    font-size: 14px; font-family: 'Segoe UI', sans-serif;
+    color: #333; margin-bottom: 8px; text-align: center;
+  }
+  .subtitle {
+    font-size: 11px; color: #666; margin-bottom: 16px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>AL-1605-0740 — form1 UserForm</h1>
+<p class="subtitle">VBA Excel Macro UI Mockup · Reconstructed from form1.frm + backupModule.bas + main.bas · v6.0</p>
+
+<!-- ══════════════ WINDOW ══════════════ -->
+<div class="title-bar">
+  <span>SPECTRA → ANSYS Heat Flux Node Assignment &nbsp;·&nbsp; AL-1605-0740 v6.0</span>
+  <div class="title-bar-btns">
+    <div class="title-btn">_</div>
+    <div class="title-btn">□</div>
+    <div class="title-btn">✕</div>
+  </div>
+</div>
+
+<div class="form-body">
+
+  <!-- ══ FRAME 1: ANSYS ══ -->
+  <div class="frame">
+    <span class="frame-legend">ANSYS APDL Input File</span>
+
+    <div class="row">
+      <span class="lbl">ANSYS file:</span>
+      <input type="text" class="wide" value="C:\models\EPU66-27A\model.dat" readonly>
+      <button class="primary">Upload ANSYS file</button>
+    </div>
+
+    <div class="row" style="margin-top:4px; gap:24px;">
+      <div class="row">
+        <span class="lbl">Total nodes:</span>
+        <span class="lbl-val">125,430</span>
+      </div>
+      <div class="row">
+        <span class="lbl">Total elements:</span>
+        <span class="lbl-val">87,210</span>
+      </div>
+      <div class="row">
+        <span class="lbl">Flux elements:</span>
+        <span class="lbl-val">12,480</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ FRAME 2: SPECTRA ══ -->
+  <div class="frame">
+    <span class="frame-legend">SPECTRA Power Density File</span>
+
+    <div class="row">
+      <span class="lbl">SPECTRA file:</span>
+      <input type="text" class="wide" value="C:\spectra\EPU66-27A_power.dta" readonly>
+      <button class="primary">Upload SPECTRA file</button>
+    </div>
+
+    <hr class="sep" style="margin:6px 0;">
+
+    <div class="stats-grid" style="margin-top:2px;">
+      <div class="stat-row">
+        <span class="stat-key">Columns:</span>
+        <span class="stat-val">61</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Rows:</span>
+        <span class="stat-val">61</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">X range:</span>
+        <span class="stat-val">-3.000 mrad &nbsp;→&nbsp; 3.000 mrad</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Y range:</span>
+        <span class="stat-val">-3.000 mrad &nbsp;→&nbsp; 3.000 mrad</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Peak PD:</span>
+        <span class="stat-val">12.45 kW/mrad²</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Total power:</span>
+        <span class="stat-val">5.67 kW</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ FRAME 3: GEOMETRY ══ -->
+  <div class="frame">
+    <span class="frame-legend">Source Geometry (mm)</span>
+
+    <!-- header row -->
+    <div class="geo-grid" style="margin-bottom:4px;">
+      <span></span>
+      <span class="geo-header">X</span>
+      <span class="geo-header">Y</span>
+      <span class="geo-header">Z</span>
+      <span></span>
+      <span></span>
+      <span class="geo-header">X</span>
+      <span class="geo-header">Y</span>
+      <span class="geo-header">Z</span>
+    </div>
+
+    <!-- Source row -->
+    <div class="geo-grid" style="margin-bottom:3px;">
+      <span class="geo-lbl">Source (S):</span>
+      <input type="text" class="xsmall" value="0.0">
+      <input type="text" class="xsmall" value="0.0">
+      <input type="text" class="xsmall" value="0.0">
+      <span></span>
+      <span class="geo-lbl">Target (T):</span>
+      <input type="text" class="xsmall" value="0.0">
+      <input type="text" class="xsmall" value="0.0">
+      <input type="text" class="xsmall" value="15000.0">
+    </div>
+
+    <!-- Side row -->
+    <div class="geo-grid" style="margin-bottom:6px;">
+      <span class="geo-lbl">Side (P):</span>
+      <input type="text" class="xsmall" value="100.0">
+      <input type="text" class="xsmall" value="0.0">
+      <input type="text" class="xsmall" value="0.0">
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+
+    <!-- basis vectors display -->
+    <div class="row" style="gap:8px; flex-wrap:wrap;">
+      <span class="lbl-vector" id="xV">Base vector X: (1.0000000, 0.0000000, 0.0000000)</span>
+    </div>
+    <div class="row" style="gap:8px;">
+      <span class="lbl-vector" id="yV">Base vector Y: (0.0000000, 1.0000000, 0.0000000)</span>
+    </div>
+    <div class="row" style="gap:8px; margin-bottom:4px;">
+      <span class="lbl-vector" id="zV">Base vector Z: (0.0000000, 0.0000000, 1.0000000)</span>
+    </div>
+
+    <div class="row">
+      <button>Update geometry</button>
+      <span class="note">Re-runs coordinate mapping with updated Source / Target / Side values</span>
+    </div>
+  </div>
+
+  <!-- ══ FRAME 4: OUTPUT ══ -->
+  <div class="frame">
+    <span class="frame-legend">Output — ANSYS External Data File</span>
+
+    <div class="row">
+      <span class="lbl">Output folder:</span>
+      <input type="text" class="wide" value="C:\models\EPU66-27A\output" readonly>
+      <button>Browse…</button>
+    </div>
+
+    <div class="row" style="margin-top:4px;">
+      <span class="lbl">Output filename:</span>
+      <input type="text" class="med" value="EPU66-27A power for ansys.inp">
+    </div>
+
+    <div class="row" style="margin-top:4px; gap:16px;">
+      <div class="row">
+        <span class="lbl">Power ratio:</span>
+        <input type="text" class="tiny" value="1.0">
+        <span class="note" style="font-style:normal;">(totalPowerRatio — scales col 4 of output)</span>
+      </div>
+    </div>
+
+    <hr class="sep" style="margin:6px 0;">
+
+    <!-- progress bar row -->
+    <div class="row" style="margin-bottom:4px;">
+      <span class="lbl">Progress:</span>
+      <div class="progress-wrap">
+        <div class="progress-outer">
+          <div class="progress-inner" style="width:0%;"></div>
+        </div>
+        <span class="progress-label" id="progLabel">0% output</span>
+      </div>
+    </div>
+
+    <!-- output stats -->
+    <div class="row" style="gap:24px;">
+      <div class="row">
+        <span class="lbl">Output elements:</span>
+        <span class="lbl-result" id="outCount">—</span>
+      </div>
+      <div class="row">
+        <span class="lbl">Total power out:</span>
+        <span class="lbl-result" id="outPower">—</span>
+      </div>
+      <div class="row">
+        <span class="lbl">Total power (SPECTRA):</span>
+        <span class="lbl-result">5.67 kW</span>
+      </div>
+    </div>
+
+    <hr class="sep" style="margin:6px 0;">
+
+    <!-- action buttons -->
+    <div class="row" style="gap:8px; margin-top:4px;">
+      <button class="primary" onclick="simulateCreate()">Create heat flux file</button>
+      <button class="disabled" id="viewBtn">View file location</button>
+      <span style="flex:1;"></span>
+      <button class="exit-btn" onclick="alert('Exit — backup parameters to .backup.txt')">Exit</button>
+    </div>
+
+  </div>
+
+  <!-- ══ ANNOTATION ══ -->
+  <div style="font-size:10px; color:#555; padding:4px 2px; line-height:1.7;">
+    <b>Button enable sequence:</b>
+    [Upload ANSYS] → (loads nodes/elements/flux elements) →
+    [Upload SPECTRA] → (runs mapping) →
+    [Create heat flux file] → (writes .inp) →
+    [View file location] &nbsp;|&nbsp;
+    [Update geometry] enabled after SPECTRA loaded.
+    <br>
+    <b>Controls reconstructed from:</b>
+    form1.frm · backupModule.bas · main.bas · sourceGeometry.cls
+  </div>
+
+</div><!-- end form-body -->
+
+<script>
+function simulateCreate() {
+  // simulate progress bar fill
+  var bar = document.querySelector('.progress-inner');
+  var lbl = document.getElementById('progLabel');
+  var outCount = document.getElementById('outCount');
+  var outPower = document.getElementById('outPower');
+  var viewBtn = document.getElementById('viewBtn');
+  var pct = 0;
+  bar.style.width = '0%';
+  lbl.textContent = '0% output';
+  var iv = setInterval(function() {
+    pct += 5;
+    bar.style.width = pct + '%';
+    lbl.textContent = pct + '% output';
+    if (pct >= 100) {
+      clearInterval(iv);
+      outCount.textContent = '12,480';
+      outPower.textContent = '5.61 kW';
+      viewBtn.classList.remove('disabled');
+      alert('External file EPU66-27A power for ansys.inp for ANSYS has been created.');
+    }
+  }, 40);
+}
+</script>
+
+</body>
+</html>

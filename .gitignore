@@ -7,3 +7,14 @@ __pycache__/
 session_backups/
 
 ~$*.xlsm
+
+# IDE / editor
+.continue/
+
+# Runtime logs and one-off outputs
+heatflux.log
+results/
+CU15-19A_power_3d.html
+
+# Single oversized ANSYS dataset (185 MB, exceeds GitHub's 100 MB file limit)
+test sample/CU18-15A fixed mask1 missteering.dat
