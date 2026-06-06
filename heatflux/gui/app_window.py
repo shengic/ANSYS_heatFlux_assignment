@@ -35,6 +35,11 @@ from heatflux.config.spectra_cache import (
     spectra_cache_file_exists,
 )
 from heatflux.gui.geometry_frame import GeometryFrame
+from heatflux.gui.plot_launcher import (
+    launch_3d_plot_window,
+    launch_3d_spectra_plot_window,
+    terminate_streamlit_children,
+)
 from heatflux.io.ansys_reader import AnsysParseResult, read_ansys_file
 from heatflux.io.output_writer import write_output_from_elements
 from heatflux.io.spectra_reader import SpectraParseResult, read_spectra_file
@@ -122,7 +127,7 @@ class MainWindow:
         header_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Label(
             header_left,
-            text="By Albert Sheng, version 2.0",
+            text="By Albert Sheng, version 3.0",
             style="HeaderSub.TLabel",
         ).pack(anchor="w", pady=(2, 0))
         ttk.Label(
@@ -313,6 +318,14 @@ class MainWindow:
         ttk.Label(parsing, textvariable=self.spectra_percent_var, style="OrangeValue.TLabel").grid(row=0, column=1, sticky="e")
         self.spectra_progress = ttk.Progressbar(parsing, orient="horizontal", mode="determinate", maximum=100, style="Spectra.Horizontal.TProgressbar")
         self.spectra_progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 2))
+        self.spectra_plot3d_btn = ttk.Button(
+            parsing,
+            text="3D surface plot and contour",
+            style="BoxSecondary.TButton",
+            command=self._on_3d_surface_plot_contour,
+            state=tk.DISABLED,
+        )
+        self.spectra_plot3d_btn.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(6, 0))
         parsing.columnconfigure(0, weight=1)
 
         ttk.Separator(frame, orient="horizontal").grid(row=3, column=0, columnspan=3, sticky="ew", pady=(6, 8))
@@ -405,6 +418,8 @@ class MainWindow:
         bottom.pack(fill=tk.X, pady=(4, 0))
         self.view_btn = ttk.Button(bottom, text="View file location", style="BoxSecondary.TButton", command=self._on_view_location)
         self.view_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        self.plot_btn = ttk.Button(bottom, text="3D mapped power in browser", style="BoxSecondary.TButton", command=self._on_launch_3d_plot)
+        self.plot_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         ttk.Button(bottom, text="Exit Session", style="BoxDanger.TButton", command=self._on_exit).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def _attach_var_traces(self) -> None:
@@ -552,6 +567,24 @@ class MainWindow:
         if not path:
             return
         self._load_spectra_for_path(Path(path))
+
+    def _on_3d_surface_plot_contour(self) -> None:
+        _log.info("User action: 3D surface plot and contour")
+        if not self.spectra_loaded:
+            messagebox.showinfo(
+                "SPECTRA not loaded",
+                "Please upload a SPECTRA file first using 'Upload SPECTRA file'.",
+            )
+            return
+        spectra_path_text = self._normalize_path_text(self.spectra_path_var.get().strip())
+        if not spectra_path_text:
+            messagebox.showerror("Missing path", "No SPECTRA file path is set.")
+            return
+        spectra_path = Path(spectra_path_text)
+        if not spectra_path.exists():
+            messagebox.showerror("SPECTRA file not found", f"Path does not exist:\n{spectra_path}")
+            return
+        launch_3d_spectra_plot_window(self.root, data_file_path=str(spectra_path))
 
     def _on_browse_output_folder(self) -> None:
         path = filedialog.askdirectory(initialdir=self._dialog_initial_dir(self.output_folder_var.get(), self.ansys_path_var.get()))
@@ -722,6 +755,7 @@ class MainWindow:
             self.total_power_spectra_var.set(f"{self.spectra_result.total_power_kw:.3f} kW")
             self.upload_spectra_btn.configure(state=tk.NORMAL)
             self.browse_spectra_btn.configure(state=tk.NORMAL)
+            self.spectra_plot3d_btn.configure(state=tk.NORMAL)
             self.upload_ansys_btn.configure(state=tk.NORMAL)
             self.browse_ansys_btn.configure(state=tk.NORMAL)
             self._save_session_backup()
@@ -736,6 +770,7 @@ class MainWindow:
             self.spectra_loaded = False
             self.spectra_result = None
             self._set_spectra_stats_from_result(None)
+            self.spectra_plot3d_btn.configure(state=tk.DISABLED)
             self._update_spectra_progress(0, "SPECTRA parse failed")
             self.spectra_cache_var.set("Cache source: none")
             messagebox.showerror("SPECTRA Parse Error", str(exc))
@@ -753,6 +788,7 @@ class MainWindow:
         self._is_loading_spectra = False
         self.upload_spectra_btn.configure(state=tk.NORMAL)
         self.browse_spectra_btn.configure(state=tk.NORMAL)
+        self.spectra_plot3d_btn.configure(state=tk.NORMAL)
         self.upload_ansys_btn.configure(state=tk.NORMAL)
         self.browse_ansys_btn.configure(state=tk.NORMAL)
         self._save_spectra_cache_async(spectra_path, self.spectra_result)
@@ -778,6 +814,11 @@ class MainWindow:
     def _update_ready_state(self) -> None:
         self.geometry_valid = self._validate_geometry()
         output_valid = bool(self.output_folder_var.get().strip()) and bool(self.output_filename_var.get().strip())
+        
+        # Check if output file exists for plotter
+        output_path = Path(self._normalize_path_text(self.output_folder_var.get())) / self.output_filename_var.get()
+        plot_ready = output_path.exists()
+        
         ready = (
             self.ansys_loaded
             and self.spectra_loaded
@@ -789,6 +830,7 @@ class MainWindow:
             and not self._is_mapping
         )
         self.create_btn.configure(state=tk.NORMAL if ready else tk.DISABLED)
+        self.plot_btn.configure(state=tk.NORMAL if plot_ready else tk.DISABLED)
 
     def _set_state_idle(self) -> None:
         self._is_loading_ansys = False
@@ -802,6 +844,7 @@ class MainWindow:
         spectra_state = tk.NORMAL if self.ansys_loaded else tk.DISABLED
         self.upload_spectra_btn.configure(state=spectra_state)
         self.browse_spectra_btn.configure(state=spectra_state)
+        self.spectra_plot3d_btn.configure(state=tk.NORMAL if self.spectra_loaded else tk.DISABLED)
         self._set_edit_controls_enabled(True)
         self.footer_status_var.set("SYSTEM OPERATIONAL")
 
@@ -822,6 +865,7 @@ class MainWindow:
         self._is_mapping = False
         self.upload_spectra_btn.configure(state=tk.DISABLED)
         self.browse_spectra_btn.configure(state=tk.DISABLED)
+        self.spectra_plot3d_btn.configure(state=tk.DISABLED)
         self.upload_ansys_btn.configure(state=tk.DISABLED)
         self.browse_ansys_btn.configure(state=tk.DISABLED)
         self.create_btn.configure(state=tk.DISABLED)
@@ -1315,6 +1359,10 @@ class MainWindow:
 
     def _on_exit(self) -> None:
         self._save_session_backup()
+        try:
+            terminate_streamlit_children()
+        except Exception as exc:
+            _log.warning("Streamlit child termination raised: %s", exc)
         self.root.destroy()
 
     def _get_current_ansys_path(self) -> Path | None:
@@ -1529,6 +1577,11 @@ class MainWindow:
                 deleted += 1
         messagebox.showinfo("Cache", f"Deleted {deleted} cache file(s).")
         self._refresh_cache_browser()
+
+    def _on_launch_3d_plot(self) -> None:
+        """Launch the 3D plot window."""
+        output_path = Path(self._normalize_path_text(self.output_folder_var.get())) / self.output_filename_var.get()
+        launch_3d_plot_window(self.root, data_file_path=str(output_path))
 
     def _on_run_sample_validation(self) -> None:
         try:
